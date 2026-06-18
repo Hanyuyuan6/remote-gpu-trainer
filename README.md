@@ -122,7 +122,7 @@ remote-gpu-trainer/
 │   ├── china.md                 #   恒源云 / 矩池云 / Featurize / 揽睿星舟
 │   └── generic-ssh.md           #   bare SSH / Slurm / K8s / Colab-Kaggle
 ├── scripts/                     # parameterized, runnable templates
-│   ├── run_one.sh.template  run_queue.sh.template
+│   ├── run_one.sh.template  run_queue.sh.template  health_patrol.sh.template
 │   ├── mem_monitor.sh  gpu_health.sh  reap_vram_zombies.sh
 │   ├── aggregate_to_fs.sh  download_loop.sh  setup-china-mirrors.sh
 │   └── verify_local.py          #   load-and-verify each artifact before any teardown
@@ -187,8 +187,8 @@ uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer  
   deepest; alongside it are `runpod`, `vastai`, `lambda`, `paperspace`, `china`, and `generic-ssh`
   (covering Slurm, K8s, Colab, Kaggle). `_schema.md` defines the shared eight-field contract.
 - **`scripts/`** — parameterized wrapper templates, a memory monitor, a GPU-health probe, a VRAM-zombie
-  reaper, FS aggregation, a resumable download loop, the China-mirror setup, and a load-and-verify
-  checker.
+  reaper, a read-only health-patrol tick, FS aggregation, a resumable download loop, the China-mirror
+  setup, and a load-and-verify checker.
 - **`examples/autodl_sweep/`** — one complete worked case, end to end.
 - **`evals/`** — a retrieval drift-guard: `cases.jsonl` holds realistic scenarios, `run_evals.py` checks
   with no API key that every scenario's answer is still present at its documented location, and

@@ -122,7 +122,7 @@ session is alive and the first log line shows the expected step/epoch.
 
 **Phase 4 — Durable monitoring.** For anything over ~1–2 h, deploy the **four-layer architecture**
 (`references/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels +
-recovery handbook. A session-bound watcher alone dies with the session. Classify each outcome →
+recovery handbook (the L2 patrol tick has a ready read-only template, `scripts/health_patrol.sh.template`). A session-bound watcher alone dies with the session. Classify each outcome →
 fixed remediation; **never blind-retry**. → **verify:** the patrol reports even when nothing changed.
 
 **Phase 5 — Aggregate + verify + teardown.** Checked-sync to durable storage (gate the success line on the
@@ -224,6 +224,6 @@ Load only what the current phase needs.
 - `references/multinode.md` — (advanced) NCCL / fabric-manager / elastic-training gotchas; single-box users skip.
 - `references/training/` — the **DL-training debug layer** (8 files: oom-memory, distributed-launch, precision-stability, throughput-profiling, checkpoint-resume, by-domain, convergence-debugging, data-pipeline) — see "When training breaks" above.
 - `references/self-improvement.md` — the feedback loop: capture a new gotcha (at a bar) into memory or the catalog, personalize on first run, keep platform facts fresh.
-- `scripts/` — parameterized wrapper templates, memory + GPU-health monitors, a VRAM-zombie reaper, FS aggregation, and a load-and-verify checker.
+- `scripts/` — parameterized wrapper templates, memory + GPU-health monitors, a VRAM-zombie reaper, a read-only health-patrol tick, FS aggregation, and a load-and-verify checker.
 - `profiles/<platform>.md` — the per-platform substrate (one per platform; `_schema.md` defines the 8 fields).
 - `examples/autodl_sweep/` — one complete, runnable worked case end to end.

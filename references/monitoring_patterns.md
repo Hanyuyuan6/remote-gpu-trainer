@@ -179,6 +179,11 @@ nohup bash -c '
 - **Never blind-restart** — probe session/log/markers first so a patrol firing mid-run cannot
   double-launch (idempotence). Classify each outcome → a fixed remediation; never blind-retry.
 
+> **Ready-made tick:** `scripts/health_patrol.sh.template` is this checklist as one runnable,
+> read-only ssh round-trip — alive + done-count + last epoch + crash-scan + `df -h`/`df -i`, an
+> escalation predicate, and a one-line report even when nothing changed — parameterized from the
+> profile's §8. Fire it from the host's recurring runner (§7: `/loop`, cron `3,33 * * * *`, …).
+
 ### L3 — event sentinels (latency)
 The §1 short-poll loop for minute-level reaction between patrol ticks. Survives nothing — it is the
 disposable fast-reaction layer; L1/L2 carry correctness. Re-arm exactly ONE after any session resume.
