@@ -61,18 +61,25 @@ fi
 # ---------------------------------------------------------------------------
 # Step 1 — enumerate PIDs holding /dev/nvidia* open.
 # fuser prints PIDs (mode letters attached, e.g. "12345m"); strip non-digits.
-# lsof is the fallback when fuser is absent. Both are run device-by-device because
-# a glob with no match would otherwise pass the literal pattern.
+# lsof is the fallback when fuser is absent. Expand /dev/nvidia* to only the real
+# device nodes first: with no NVIDIA driver the glob matches nothing, and passing
+# the literal "/dev/nvidia*" to fuser/lsof would otherwise error and mislead.
 # ---------------------------------------------------------------------------
 collect_dev_holders() {
-    local pids=""
+    local pids="" dev
+    local devs=()
+    for dev in /dev/nvidia*; do [ -e "$dev" ] && devs+=("$dev"); done
+    if [ "${#devs[@]}" -eq 0 ]; then
+        echo "no /dev/nvidia* device nodes present — cannot enumerate device holders." >&2
+        return 1
+    fi
     if command -v fuser >/dev/null 2>&1; then
         # fuser writes the PID list to stdout, the verbose table to stderr.
         # 2>/dev/null drops the table; we keep only the bare PIDs.
-        pids="$(fuser /dev/nvidia* 2>/dev/null || true)"
+        pids="$(fuser "${devs[@]}" 2>/dev/null || true)"
     elif command -v lsof >/dev/null 2>&1; then
         # lsof -t prints one PID per line for the listed device files.
-        pids="$(lsof -t /dev/nvidia* 2>/dev/null || true)"
+        pids="$(lsof -t "${devs[@]}" 2>/dev/null || true)"
     else
         echo "neither fuser nor lsof is available — cannot enumerate device holders." >&2
         return 1

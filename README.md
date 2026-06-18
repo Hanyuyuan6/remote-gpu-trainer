@@ -98,7 +98,7 @@ remote-gpu-trainer/
 ├── references/                  # platform-agnostic knowledge, loaded on demand
 │   ├── principles.md            #   the 10 invariants, expanded with cross-platform nuance
 │   ├── lifecycle_checklist.md   #   the 6 phases as a per-platform checklist
-│   ├── gotchas_universal.md     #   U1–U39, each as symptom → root cause → fix
+│   ├── gotchas_universal.md     #   U1–U39, symptom → root cause → fix (U36–U38 are cross-links)
 │   ├── monitoring_patterns.md   #   four-layer durable monitoring + cross-host portability map
 │   ├── spot-resilience.md       #   preemption signals, Young/Daly cadence, atomic-write resume
 │   ├── ssh_transport.md         #   ssh config, resumable rsync/scp, secrets via stdin, CRLF
@@ -176,7 +176,7 @@ uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer  
 - **`SKILL.md`** — the hub. Ten platform-agnostic operating principles, the six-phase lifecycle with a
   runnable gate per phase, the platform selector, and the cross-links into everything below.
 - **`references/`** — the platform-agnostic knowledge: `principles.md` (the ten invariants expanded),
-  `gotchas_universal.md` (U1–U39, each `symptom → root cause → fix`), `monitoring_patterns.md`
+  `gotchas_universal.md` (U1–U39, each a `symptom → root cause → fix`; U36–U38 are delegated cross-links), `monitoring_patterns.md`
   (four-layer durable monitoring plus a cross-host portability map), and the focused playbooks for SSH
   transport, China networking, spot resilience, parallel ablation, multi-node, and self-improvement.
 - **`references/training/`** — the **DL-training debug layer**, eight files for when the *run* breaks

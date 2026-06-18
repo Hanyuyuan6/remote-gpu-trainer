@@ -113,12 +113,13 @@ restarts the epoch, reshuffles data, and degrades accuracy. The checkpoint must 
 - RNG state (Python `random`, NumPy, `torch`, and CUDA)
 - dataloader position (sampler epoch / resumable-sampler offset)
 
-**Write atomically: tmp → fsync → os.rename.** A preemption mid-write corrupts the file, and a naive
-overwrite can leave zero good checkpoints. POSIX `rename` is atomic on the same filesystem, so:
+**Write atomically: tmp → fsync → os.replace.** A preemption mid-write corrupts the file, and a naive
+overwrite can leave zero good checkpoints. `os.replace` maps to the atomic POSIX `rename(2)` on the same
+filesystem (and, unlike `os.rename`, overwrites atomically on Windows too), so:
 
 1. Write the whole state to `latest.pt.tmp`.
 2. `fsync` the file (and the directory) so bytes hit disk before the rename.
-3. `os.rename("latest.pt.tmp", "latest.pt")` — the swap is all-or-nothing.
+3. `os.replace("latest.pt.tmp", "latest.pt")` — the swap is all-or-nothing.
 4. Keep the previous `latest.pt` until the new one is committed; a kill at any point leaves one intact file.
 
 **Checkpoint to the platform's DURABLE location, not local scratch** (principle #4). A managed replacement

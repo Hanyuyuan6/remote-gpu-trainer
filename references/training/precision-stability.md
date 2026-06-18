@@ -134,12 +134,13 @@ step = a real overflow (go to P10). URLs:
 https://github.com/pytorch/pytorch/blob/main/docs/source/notes/amp_examples.rst ·
 https://docs.pytorch.org/docs/2.12/amp.html
 
-### P6 — bf16 needs NO GradScaler — and adding one is a silent bug
+### P6 — bf16 needs NO GradScaler (adding one is pointless, not harmful)
 
-**Symptom**: a bf16 run wrapped in GradScaler behaves oddly / a copied fp16 recipe carries a scaler into bf16.
+**Symptom**: a copied fp16 recipe carries a GradScaler into a bf16 run — wasted overhead, not a crash or a wrong result.
 
 **Root cause**: bf16 has fp32's exponent range, so gradients don't underflow → loss-scaling is unnecessary
-and the scaler's skip/backoff machinery just adds noise.
+and the scaler's skip/backoff machinery is dead weight (scale-then-unscale cancels, and it never finds an
+overflow to skip).
 
 **Fix**: for bf16, drop the scaler entirely — plain `loss.backward(); optimizer.step()`. Only fp16 (and the
 V100/T4 path) uses GradScaler. This is the single biggest reason bf16 is the low-friction default (P1).

@@ -5,8 +5,8 @@ description: |
   RENTED or remote instance they do not own — training, eval, ablation sweeps, batch inference, or
   large data processing — on AutoDL, RunPod, vast.ai, Lambda, Paperspace, Chinese platforms
   (恒源云/矩池云/Featurize/揽睿星舟), a bare SSH box, Slurm, or Kubernetes; single OR multi-instance.
-  Triggers (multilingual): "远程 GPU 训练", "GPU 租赁", "GPU rental", "租卡", "RunPod", "vast.ai",
-  "Lambda", "恒源云", "矩池云", "spot 抢占", "spot preemption", "断点续训", "resumable training",
+  Triggers (multilingual): "远程 GPU 训练", "GPU 租赁", "GPU rental", "租卡", "spot 抢占",
+  "spot preemption", "断点续训", "resumable training",
   "tmux 训练守护", "防 SSH 断线", "scp/rsync 上传", "多实例 ablation", "远程 GPU 监控",
   "省钱关机/销毁实例", "stop vs terminate billing", "checkpoint 磁盘满", "CUDA OOM/显存不足",
   "loss NaN/loss spike", "loss 不下降/不收敛", "overfit 单 batch", "FSDP/DeepSpeed 配置", "多卡训练 hang",
@@ -152,7 +152,7 @@ Full detail in each profile; this table is the at-a-glance.
 | vast.ai | disk (bills forever) | nothing | ~0 s (abrupt) | no |
 | Lambda | n/a (no stop) | nothing | n/a (on-demand) | no |
 | China (恒源云/矩池云/…) | varies; data disk bills | per-platform persistent vol | n/a | yes |
-| generic-SSH/Slurm/K8s | you own it | you own it | Slurm SIGTERM→30 s | only if in China |
+| generic-SSH/Slurm/K8s | you own it | you own it | Slurm SIGTERM→KillWait (def 30 s) | only if in China |
 
 ## Common gotchas (top 8 inline — full catalog in references/)
 
