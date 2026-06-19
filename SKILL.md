@@ -122,7 +122,7 @@ session is alive and the first log line shows the expected step/epoch.
 
 **Phase 4 — Durable monitoring.** For anything over ~1–2 h, deploy the **four-layer architecture**
 (`references/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels +
-recovery handbook (the L2 patrol tick has a ready read-only template, `scripts/health_patrol.sh.template`). A session-bound watcher alone dies with the session. Classify each outcome →
+recovery handbook. **On Claude Code, fire the L2 patrol via `/loop 30m` (or `ScheduleWakeup`) running `scripts/health_patrol.sh.template`**; a host with no local recurring runner wires the on-box self-push instead (`references/monitoring_patterns.md` §7). A session-bound watcher alone dies with the session. Classify each outcome →
 fixed remediation; **never blind-retry**. → **verify:** the patrol reports even when nothing changed.
 
 **Phase 5 — Aggregate + verify + teardown.** Checked-sync to durable storage (gate the success line on the
@@ -141,7 +141,7 @@ across instances/queues. **REQUIRED:** `superpowers:dispatching-parallel-agents`
 predicate (don't fan out onto shared state) and the mandatory post-fan-out reconciliation. FS-shared deployment
 pattern → `references/parallel_ablation.md`.
 
-## Quick reference — the three facts that bite per platform
+## Quick reference — the four facts that bite per platform
 
 Full detail in each profile; this table is the at-a-glance.
 

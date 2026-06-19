@@ -306,7 +306,7 @@ into a cloud agent (secret-leak).
 
 **Fix — the two-leg pattern**:
 - **Remote self-completion (guaranteed, survives session/SSH death)**: chain `train → eval → touch marker` under one `nohup ... </dev/null >log 2>&1 &`. Detect "done" by a **log marker** (`grep -q 'QUEUE DONE' master.log`), NEVER by `pgrep` — the waiter's own command line contains the pattern, so `pgrep -f` matches itself and loops forever (U17).
-- **Live progress (best-effort)**: a session-bound local loop (cron, e.g. `7,37 * * * *`) that ssh-polls with the *local* key. Be honest it dies when the session closes — the remote still finishes; the user re-pings to pull.
+- **Live progress (best-effort)**: a session-bound local loop (e.g. `/loop 30m` / cron `3,33 * * * *`) that ssh-polls with the *local* key. Be honest it dies when the session closes — the remote still finishes; the user re-pings to pull.
 - **Don't promise autonomous cross-session polling you can't deliver.** (`tmux` is often absent on a fresh box and `apt-get install` fails offline — `nohup ... </dev/null >log 2>&1 &` is zero-dependency and survives SSH drop; verify with `pgrep -af <script>`.) Full architecture → `references/monitoring_patterns.md`.
 
 ### U19 — Tracker run deletion lags; a fresh export resurrects "deleted" runs

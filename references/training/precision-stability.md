@@ -143,7 +143,7 @@ and the scaler's skip/backoff machinery is dead weight (scale-then-unscale cance
 overflow to skip).
 
 **Fix**: for bf16, drop the scaler entirely — plain `loss.backward(); optimizer.step()`. Only fp16 (and the
-V100/T4 path) uses GradScaler. This is the single biggest reason bf16 is the low-friction default (P1).
+V100/T4 path) uses GradScaler.
 URL: https://docs.pytorch.org/docs/2.12/amp.html
 
 ### P7 — Gradient clipping under GradScaler: `unscale_` FIRST or you clip scaled grads

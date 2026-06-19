@@ -236,7 +236,7 @@ Two legs, never conflated:
 - **Leg 1 — remote self-completion (guaranteed, survives session/SSH death):** the L1 chain
   (`train → eval → touch marker` under one detach primitive). Detect done by a log/marker, never by
   `pgrep` of the waiter's own pattern. This guarantees RESULTS but gives no reporting cadence.
-- **Leg 2 — live progress (best-effort):** a session-bound patrol loop (L2, e.g. cron `7,37 * * * *`)
+- **Leg 2 — live progress (best-effort):** a session-bound patrol loop (L2, e.g. `/loop 30m` or cron `3,33 * * * *`)
   polling with the LOCAL ssh key. Be honest it dies when the session closes — the remote still finishes;
   the user re-pings to pull.
 
