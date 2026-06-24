@@ -32,9 +32,10 @@ scenario's `must_cover` points within ~2 hops.
 | china-hf-download-stall | **PASS** | ≤2 | SKILL.md → `references/china-network.md` (HF_ENDPOINT=hf-mirror, hf_transfer caution) |
 | lambda-stop-vs-terminate | **PASS** | ≤2 | SKILL.md → `profiles/lambda.md` (no stop state; terminate irreversible) |
 | autodl-first-contact-15day | **PASS** | 1 | SKILL.md principle #10 → `profiles/autodl.md` Surface block + AD-DANGER (关机 auto-releases after 15 days) |
+| result-validity-report-gate | **PASS** | 2 | SKILL.md:48 / Phase-5 report-gate → `references/result-validity.md` V1 (control-diff bug/effect/noise) + V5 (≥3-seed mean±std) + V3 (leakage normcase/same-bytes) + V6 (re-derive before teardown) |
 
-**Summary: 14/14 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 5 standalone), each to a
-correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs all 14
+**Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
+correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs all 15
 cases and is the regression guard kept green in CI.
 
 ## Known gaps (what these results do NOT yet cover)

@@ -45,7 +45,7 @@ cheap boxes + the disk-budget / monitoring / teardown reality** that *is* the jo
 | Managed multi-cloud price-shopping + auto spot-recovery across **Western** clouds | **SkyPilot** (has its own Agent Skill) — then come back here to make your *code* resume-correct so its recovery actually works |
 | Open BYOC dev environments | **dstack** |
 | Zero-ops serverless inference | **Modal** |
-| "Is this metric / ablation delta real?" | **REQUIRED:** `verifying-dl-experiments` (this skill owns *running* the job; that one owns *whether the number is true*) |
+| "Is this metric / ablation delta real?" | **`references/result-validity.md`** for the inline floor; full method → **`verifying-dl-experiments`** (this skill owns *running* the job; that owns *whether the number is true*) |
 
 **This skill is for the blind spot those tools leave:** AutoDL + Chinese platforms, bare SSH/Slurm/K8s
 rentals, and the operational gotchas (inode caps, mirror stalls, cgroup OOM, silent sync, spot grace
@@ -57,7 +57,7 @@ These hold on every metered, isolated, rented GPU; only the paths/CLI change. On
 form with cross-platform nuance is in **`references/principles.md`** (read it before Phase 0).
 
 1. **Minimize paid wall-clock.** The meter runs the whole time — smoke locally on CPU before renting, launch detached, release the instant verification passes.
-2. **Cheap checks before expensive compute.** A 1–2 batch CPU smoke (logger off) kills import/config/shape/scale bugs for ~free. (Smoke *content* → `verifying-dl-experiments`.)
+2. **Cheap checks before expensive compute.** A 1–2 batch CPU smoke (logger off) kills import/config/shape/scale bugs for ~free. (Smoke *content* → `references/result-validity.md` V4, full method → `verifying-dl-experiments`.)
 3. **Trust artifacts you loaded, not log lines that claim success.** "synced/saved/done" lies under a silently-failed write; a watcher's own state is also a claim — reconcile it against the real process/artifact.
 4. **Know what survives stop vs destroy.** Per platform, identify exactly which mount survives a *stop* and which survives a *terminate* — the data you need often lives on the volatile one. (The single biggest portability trap.)
 5. **Storage fails on the dimension you're not watching.** Disk dies on **inodes** before bytes; the real hog hides in a symlinked cache; clean by value (keep tiny evidence, drop big scratch); monitor `df -i`, not just `df -h`.
@@ -131,7 +131,10 @@ fixed remediation; **never blind-retry**. → **verify:** the patrol reports eve
 
 **Phase 5 — Aggregate + verify + teardown.** Checked-sync to durable storage (gate the success line on the
 copy result — principle #3), then **load-and-verify each artifact** (`scripts/verify_local.py`), THEN the profile's
-meter-stopping action. → **verify:** `verify_local.py` reports 100% OK *before* any teardown.
+meter-stopping action. **Before you *report* any metric / ablation delta from the run, pass the result-validity
+gate (`references/result-validity.md`):** classify bug/effect/noise, check leakage / fair-comparison / variance /
+metric-direction — a number you can't re-derive from the saved artifact is not a result yet. → **verify:**
+`verify_local.py` reports 100% OK *before* any teardown.
 
 > **Iron Law — teardown gate:** NO `release` / `terminate` / `destroy` / file-delete until checkpoints are
 > **pulled to local AND verified by load**, and the user has explicitly approved the cost-affecting action.
@@ -176,9 +179,9 @@ The universal ones that cost the most GPU-hours. Symptom → fix; root cause + t
 
 Platform ops is only half the job — once the box is running, training breaks in its own ways. The
 `references/training/` layer is the debug knowledge for the run itself. Boundary: **this layer owns
-"make it run, fast, and not crash"; `verifying-dl-experiments` owns "is the *number* real"** —
-cross-link it for collapse / leakage / metric-validity. Every entry is symptom → root cause → fix with
-cited current docs.
+"make it run, fast, and not crash"; the *is-the-number-real* floor is `references/result-validity.md`** —
+with the full methodology (collapse / leakage / integrity spectrum) in the `verifying-dl-experiments`
+companion. Every entry is symptom → root cause → fix with cited current docs.
 
 - `references/training/oom-memory.md` — CUDA/VRAM + host-RAM OOM and the fit-it ladder (grad-accum → bf16 → activation-checkpointing → `expandable_segments` → FSDP/ZeRO → CPU/NVMe offload → LoRA/QLoRA); OOM-at-a-specific-step (first backward / val / longest batch); the memory snapshot + visualizer.
 - `references/training/distributed-launch.md` — `torchrun`/`accelerate`/`deepspeed` launch + env contract, DDP/FSDP/ZeRO config, and the multi-GPU **HANGS** toolkit (one-rank-diverged, rank-conditional collective, dataloader-length mismatch). Multi-node wire → `references/multinode.md`.
@@ -200,7 +203,7 @@ skill still works standalone.
 > gate, parallel-task dispatch, the HF CLI, a hosted tracker). The companion skill is the Claude-Code-native
 > way to get it; the *step* is what's required, not that specific skill.
 
-- **`verifying-dl-experiments`** — owns *is-the-number-real*: smoke content, retry-vs-safeguard, keepable-checkpoint, eval sizing, tracker forensics, GPU-0%-util diagnosis. This skill owns *where/when/how-much-$*.
+- **`verifying-dl-experiments`** — the full *is-the-number-real* methodology: smoke content, retry-vs-safeguard, keepable-checkpoint, eval sizing, tracker forensics, GPU-0%-util diagnosis. Its must-not-skip **floor is distilled inline at `references/result-validity.md`** (a standalone install still gates a number); install the companion for depth. This skill owns *where/when/how-much-$*.
 - **`huggingface-skills:hf-cli`** — the transport verbs (`hf download --resume`, `hf upload-large-folder`, `hf cache verify`); this skill owns the China-mirror swap + stall-retry (`references/china-network.md`).
 - **`huggingface-skills:huggingface-trackio`** — hosted tracker so metrics survive teardown (gotcha U20); poll `trackio` alerts as a structured monitor instead of brittle ssh-tail.
 - **`superpowers:verification-before-completion`** — the Iron Law's general form; gates every "training done / synced / teardown complete" claim.
@@ -232,6 +235,7 @@ Load only what the current phase needs.
 - `references/parallel_ablation.md` — FS-shared fan-out + the independence predicate + reconciliation.
 - `references/multinode.md` — (advanced) NCCL / fabric-manager / elastic-training gotchas; single-box users skip.
 - `references/training/` — the **DL-training debug layer** (8 files: oom-memory, distributed-launch, precision-stability, throughput-profiling, checkpoint-resume, by-domain, convergence-debugging, data-pipeline) — see "When training breaks" above.
+- `references/result-validity.md` — the inline **is-the-number-real floor** (bug/effect/noise · fair comparison · leakage probes · smoke≠correct · metric/variance integrity · cross-doc reconciliation); full methodology → `verifying-dl-experiments`.
 - `references/self-improvement.md` — the feedback loop: capture a new gotcha (at a bar) into memory or the catalog, personalize on first run, keep platform facts fresh.
 - `scripts/` — wrapper templates (`run_one`/`run_queue`), monitors (`mem_monitor`, `gpu_health`, `reap_vram_zombies`), the read-only patrol (`health_patrol.sh.template`), transfer/aggregation (`download_loop`, `aggregate_to_fs`, `setup-china-mirrors`), the load-and-verify checker (`verify_local.py`), and the `verified`-stamp freshness linter (`check_staleness.py`).
 - `profiles/<platform>.md` — the per-platform substrate (one per platform; `_schema.md` defines the 8 fields).
