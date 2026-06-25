@@ -8,7 +8,7 @@ spot_available: false        # on-demand only — NO mid-run spot reclaim (see �
 spot_grace: n/a              # the involuntary-loss vector is auto-release of STOPPED instances, not preemption
 shared_fs: per-platform      # /mnt | /hy-netdisk(+/hy-nas) | work+/cloud | /home/user/netdisk/data — region/machine-scoped, see §2
 inode_cap: undocumented      # size caps documented (5/20/30/10 GB free); inode caps NOT — measure df -i live
-free_egress: true            # intra-China; cross-GFW pulls need a mirror (see references/china-network.md)
+free_egress: true            # intra-China; cross-GFW pulls need a mirror (see references/run-remote/china-network.md)
 china_mirror_needed: true    # all four sit behind the GFW — mirror/proxy story is shared, not per-platform
 host_driver_cuda_max: image-dependent
 local_nvme: per-platform     # Gpushare /hy-tmp, LanRui /home/user/datadisk, Featurize local scratch
@@ -26,13 +26,13 @@ records only the deltas, at the FAMILY level first, then a per-platform comparis
 **To jump:** `grep -in '<keyword>' profiles/china.md` (e.g. `proxy`, `ephemeral`, `bills`, `inode`, `LanRui`).
 
 ## Table of contents
-1. LAUNCH · 2. STORAGE MODEL (survival matrix + `/root`-ephemeral trap) · 3. NETWORK (→ `references/china-network.md`)
-· 4. SPOT/INTERRUPTION · 5. TEARDOWN/BILLING · 6. DAEMON TOOL · 7. TOP GOTCHAS (universal → `references/gotchas_universal.md`)
+1. LAUNCH · 2. STORAGE MODEL (survival matrix + `/root`-ephemeral trap) · 3. NETWORK (→ `references/run-remote/china-network.md`)
+· 4. SPOT/INTERRUPTION · 5. TEARDOWN/BILLING · 6. DAEMON TOOL · 7. TOP GOTCHAS (universal → `references/run-remote/gotchas_universal.md`)
 + Platform-specific debugging · 8. SCRIPT OVERRIDES · 9. Per-platform comparison table
 
 > Universal gotchas (CRLF, cgroup OOM, silent sync, tmux-holds-script, disk-budget, secrets-off-shared-FS)
-> are NOT restated here — see `references/gotchas_universal.md`. The mirror/proxy/download story is NOT
-> restated either — it is shared across all CN platforms and lives in `references/china-network.md`.
+> are NOT restated here — see `references/run-remote/gotchas_universal.md`. The mirror/proxy/download story is NOT
+> restated either — it is shared across all CN platforms and lives in `references/run-remote/china-network.md`.
 
 ---
 
@@ -105,7 +105,7 @@ Each platform pairs a **small reset-prone system disk** with a **persistent netw
 **Inode caps:** size caps are documented (5 / 20 / 30 / 10 GB free across the four); **explicit inode caps are
 NOT documented by any of them**. The many-small-files metadata-exhaustion risk still transfers to any shared
 FS — measure `df -i <persistent-mount>` on a live instance in Phase 0 rather than assuming a number. Redirect
-HF/ModelScope caches off the small system disk → see `references/china-network.md` §2.
+HF/ModelScope caches off the small system disk → see `references/run-remote/china-network.md` §2.
 
 State the checkpoint mount for §5's teardown verb: write to the **persistent netdisk/数据盘**, never `/root`.
 On Gpushare, also stage hot datasets to `/hy-tmp` (local SSD) for IO, but copy results back to `/hy-netdisk`
@@ -116,7 +116,7 @@ before stopping — `/hy-tmp` is local AND auto-wiped 24 h after shutdown (GS5).
 ## 3. NETWORK
 
 **The entire mirror / proxy / resumable-download story is shared across all CN platforms and lives in
-`references/china-network.md` — do NOT duplicate it here.** That reference owns the mirrors table
+`references/run-remote/china-network.md` — do NOT duplicate it here.** That reference owns the mirrors table
 (PyPI/conda/HF), `HF_ENDPOINT=https://hf-mirror.com`, the ModelScope fallback, the resumable-download retry
 ladder, the `hf_transfer` hang caution, and the `no_proxy` trap. Only the per-platform **egress accelerator**
 differs and is recorded here (verified per-platform docs 2026-06):
@@ -133,7 +133,7 @@ differs and is recorded here (verified per-platform docs 2026-06):
   uses (verified gpushare.com/docs/instance/network_turbo 2026-06).
 - **Matpool** — no one-command egress proxy; ships source-switch scripts under `/public/script/`
   (`switch_conda_source.sh`, `switch_pip_source.sh`, `switch_apt_source.sh`). Fall back to mirrors
-  (`references/china-network.md`).
+  (`references/run-remote/china-network.md`).
 - **Featurize / LanRui** — no documented one-command academic proxy surfaced; mirrors only.
 
 **Port exposure:** JupyterLab/TensorBoard are built-in quick-tools (all four). **Custom ports must be declared
@@ -170,7 +170,7 @@ family. The real involuntary-loss vectors are:
 
 **Resume hook:** checkpoint-to-durable + load-latest-on-startup (principle #8) is still the right spine — here
 it guards against a forgotten stop, a 10-day auto-release, and a `/hy-tmp` 24 h wipe, not a spot kill. The
-cadence formula in `references/spot-resilience.md` still applies if a job is long enough to span a forced stop.
+cadence formula in `references/run-remote/spot-resilience.md` still applies if a job is long enough to span a forced stop.
 
 ---
 
@@ -214,11 +214,11 @@ re-attachable session.
 tmux survives an **SSH drop** but **NOT** an instance **stop/restart** on any platform (on Gpushare the restart
 resets `/root`, taking the tmux server and any `/root` logs with it) — so the durable spine is
 checkpoint-to-persistent-disk (§2, principle #8), not the tmux session. LanRui additionally supports
-**multi-machine multi-GPU distributed training** — if used, see `references/multinode.md`.
+**multi-machine multi-GPU distributed training** — if used, see `references/run-remote/multinode.md`.
 
 ---
 
-## 7. TOP GOTCHAS  *(platform-pinned; universal ones → `references/gotchas_universal.md`)*
+## 7. TOP GOTCHAS  *(platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)*
 
 ### Family-wide (China-specific, not in the universal catalog)
 
@@ -264,7 +264,7 @@ synced to `/hy-netdisk` before stop.
 Symptom: after `export …turbo.gpushare.com…`, `pip install` / `apt` / domestic mirrors hang or `ProxyError`.
 → Root cause: the academic proxy whitelists only GitHub/HF/PyTorch/Kaggle and **restricts everything else**
 (verified network_turbo docs 2026-06). → Fix: `unset http_proxy https_proxy` the moment the accelerated pull
-finishes (§3). Same shape as the `no_proxy` trap in `references/china-network.md`.
+finishes (§3). Same shape as the `no_proxy` trap in `references/run-remote/china-network.md`.
 
 **GS3 — `/hy-netdisk` absent on unmarked machines.**
 Symptom: scripts referencing `/hy-netdisk` fail on some rentals. → Root cause: the shared netdisk exists only
@@ -316,7 +316,7 @@ the data.
 **LR2 — shared `netdisk/data` folder mounted into every same-zone workspace → cross-run clobber.** Symptom:
 a parallel ablation overwrites another run's outputs. → Root cause: `/home/user/netdisk/data` is auto-mounted
 and shared across *all* workspaces in the same availability zone. → Fix: per-job isolated write paths
-(`references/parallel_ablation.md`); never share a mutable output dir under `netdisk/data`. Also: the 网盘 is
+(`references/run-remote/parallel_ablation.md`); never share a mutable output dir under `netdisk/data`. Also: the 网盘 is
 poor at many-small-file *writes* — route those to the 数据盘.
 
 **LR3 — platform/domain churn invalidates cached paths.** Symptom: scripted paths/domain fail post-migration.
@@ -353,7 +353,7 @@ Before trusting a run, in Phase 0 (per platform):
 ## 8. SCRIPT OVERRIDES
 
 Parameterize the `scripts/` templates per platform. `PROXY_HOOK`, `HF_HOME`, and the mirror env all defer to
-`references/china-network.md`; only the **mounts** truly differ.
+`references/run-remote/china-network.md`; only the **mounts** truly differ.
 
 | Var | Matpool | Gpushare | Featurize | LanRui |
 |---|---|---|---|---|
@@ -371,7 +371,7 @@ and `$WANDB_API_KEY` / `$HF_TOKEN` pass through from the platform env.
 
 Common to all: the credential lives in an env var or `.netrc` on the **ephemeral system disk**, never on the
 shared/persistent netdisk (a shared `data` folder mounted into every same-zone workspace, like LanRui's, is
-especially leaky — universal secrets-off-shared-FS gotcha in `references/gotchas_universal.md`).
+especially leaky — universal secrets-off-shared-FS gotcha in `references/run-remote/gotchas_universal.md`).
 
 ---
 
@@ -394,4 +394,4 @@ delta applies.
 three things to re-bind per platform are (1) the **persistent mount** (never `/root`; on Gpushare never
 `/hy-tmp` either), (2) the **meter-stop verb** — and on LanRui, that stopping is not enough, the 数据盘 must be
 destroyed — and (3) the **proxy hook** (real proxy only on Gpushare, with a strict whitelist; mirrors-only
-elsewhere → `references/china-network.md`).
+elsewhere → `references/run-remote/china-network.md`).

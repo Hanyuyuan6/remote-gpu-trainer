@@ -4,7 +4,7 @@ The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with
 and the *one* rental where the meter-stop action is non-destructive. Fills all 8 schema sections
 (`profiles/_schema.md`) at full depth. Read this **before Phase 0**; it owns every path, proxy, billing
 verb, and TB pin the SKILL.md phases delegate to. Universal gotchas are NOT restated here — see
-`references/gotchas_universal.md`.
+`references/run-remote/gotchas_universal.md`.
 
 > **Surface to the user up front (principle #10):** conveniences most users miss — the console has a
 > **one-click "设置SSH免密登录"** (registers your key so the agent connects non-interactively), **GPU-availability
@@ -61,7 +61,7 @@ the console (`ssh -p <PORT> root@connect.<region>.seetacloud.com`). No first-cla
 job control — SSH is the orchestration channel. Set a stable alias per instance in `~/.ssh/config`
 (`Host autodl-<proj>-<N>`, `HostName connect.<region>.seetacloud.com`, `Port <PORT>`) so every later
 command is short; the port is assigned at create-time and **changes on re-create** (update the alias).
-SSH/keepalive config → `references/ssh_transport.md`.
+SSH/keepalive config → `references/run-remote/ssh_transport.md`.
 
 **Env contract — the prebuilt base miniconda IS the env (AD6).** The image ships the full DL stack into
 **base** (`/root/miniconda3/bin/python`); there is no `/root/miniconda3/envs/<name>/`. Base is the
@@ -109,7 +109,7 @@ another probe before relying on it.
 fails "No space left" because `df -i` is at 100%. The inode bomb is **per-sample eval visualization**
 (`files_per_sample × N_samples × N_conditions` → tens of thousands of tiny files); checkpoints (few large
 files) are inode-cheap. Monitor `df -i`, not just `df -h` (Phase 0 + every space check). Eval-artifact
-sizing policy is owned by **REQUIRED:** verifying-dl-experiments.
+sizing policy is owned by **REQUIRED:** references/verifying/methodology.md.
 
 **Data-disk hog (AD5).** When `/root/autodl-tmp` hits 100% but `runs/` looks small, the real hog is the
 **HF cache symlinked onto the data disk** (`~/.cache/huggingface` → tens of GB of model blobs). Audit
@@ -137,7 +137,7 @@ covers the API but big `.safetensors` shards still hit the flaky international e
 proxy; (b) `no_proxy` in network_turbo lists `modelscope.com` but **not** `modelscope.cn` — routing a
 DOMESTIC source through the international-acceleration proxy SLOWS it. Wrap every download in a
 `timeout <s> … && break` retry loop (resumes partial files; a stall ≠ permanent failure). Full mirror
-table + `no_proxy` ladder → `references/china-network.md`.
+table + `no_proxy` ladder → `references/run-remote/china-network.md`.
 
 **Port exposure.** AutoDL maps a single custom port (6006) for user services; the platform also exposes
 JupyterLab. SSH port is the per-instance `<PORT>` and changes on re-create.
@@ -154,7 +154,7 @@ hosted tracker (**REQUIRED:** huggingface-skills:huggingface-trackio).
 
 **SSH flavor.** Direct-TCP SSH on the per-instance host:port — `scp`/`rsync` work normally (no proxied-SSH
 restriction). Use a per-dir resumable loop for large transfers (single-connection `scp -r` resets mid-
-transfer); `rsync -avz --partial` is preferred. Transport patterns → `references/ssh_transport.md`.
+transfer); `rsync -avz --partial` is preferred. Transport patterns → `references/run-remote/ssh_transport.md`.
 
 ---
 
@@ -164,18 +164,18 @@ transfer); `rsync -avz --partial` is preferred. Transport patterns → `referenc
 window to handle (`spot_grace: n/a`). The real loss vectors are: (a) **forgot to release/关机** → idle
 billing (principle #1); (b) an instance **reboot** that ends a non-detached process (a vanished process is
 not always OOM — enumerate reboot / OOM / SSH-HUP / manual-kill before concluding, see
-`references/gotchas_universal.md`); (c) availability — the GPU plan being sold out at create-time (build
+`references/run-remote/gotchas_universal.md`); (c) availability — the GPU plan being sold out at create-time (build
 retry-until-available, not survive-an-eviction).
 
 **Resume hook.** The universal spine still applies (principle #8): checkpoint atomically to the data disk +
 sync `best.pth` to FS, and resume-from-latest unconditionally on relaunch. The detach primitive (§6) makes
 the *identical launch command* survive an SSH drop; checkpoint+resume makes it survive a reboot. Cadence
-formula → `references/spot-resilience.md` (the formula generalizes even without spot — it bounds
+formula → `references/run-remote/spot-resilience.md` (the formula generalizes even without spot — it bounds
 re-compute lost to a reboot).
 
 ---
 
-## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
+## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law; verified 2026-06, author daily use)*
 
 **关机 (shutdown / power-off) STOPS the meter AND keeps `/root` + both disks — this is the AutoDL
 EXCEPTION among rentals.** Everywhere else (RunPod wipes the container disk on stop, vast bills the disk
@@ -191,7 +191,7 @@ forever, K8s wipes the pod FS, Colab loses `/content`) a "stop" is lossy or stil
 
 **Cost trap.** 关机 still bills the data-disk *storage* at a small rate while the GPU meter is off — far
 cheaper than running, but not free. Only 释放 fully ends storage billing, at the cost of the data disk.
-**⚠️ Auto-release clock (AD-DANGER):** a 关机 (stopped) instance is **auto-released after 15 days** (the
+**⚠️ Auto-release clock (AD-DANGER, verified 2026-06):** a 关机 (stopped) instance is **auto-released after 15 days** (the
 console shows "关机 15 天后释放") → that release deletes `/` **and the data disk**, so 关机 is safe parking
 only *within* the window; for a longer pause, sync `best` to `/root/autodl-fs` (survives 释放) or expect to
 re-download. Low balance / arrears also force-stop the instance. **Surface this to the user up front
@@ -215,17 +215,17 @@ survive a 关机/reboot — that is what checkpoint+resume (§4) is for.
 **Native queue: none.** AutoDL has no built-in scheduler → use the bundled `scripts/run_queue.sh.template`
 (resumable queue iterator, `start_index` for resume) driving `scripts/run_one.sh.template` per cell.
 **Never overwrite a script a running bash is mid-execution** (bash reads by byte-offset → re-executes
-blocks; version the filename) — universal physics, see `references/gotchas_universal.md`.
+blocks; version the filename) — universal physics, see `references/run-remote/gotchas_universal.md`.
 
 **Monitoring.** A session-bound watcher dies with the session; for multi-hour runs deploy the four-layer
-durable architecture (`references/monitoring_patterns.md`). Detect "done" by a **log marker**
+durable architecture (`references/run-remote/monitoring_patterns.md`). Detect "done" by a **log marker**
 (`grep -q 'QUEUE DONE' master.log`), never by `pgrep` (the waiter's own cmdline matches the pattern and
 loops forever). A cloud scheduler cannot reach the rented box (no SSH key in a cloud sandbox — secret
 leak); the honest recurring check is the remote self-monitor + a session loop with the local key.
 
 ---
 
-## 7. TOP GOTCHAS  (AutoDL-pinned; universal ones → `references/gotchas_universal.md`)
+## 7. TOP GOTCHAS  (AutoDL-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
 **AD1 — external network call hangs / wandb shows 0 runs.** *Symptom:* `wandb.init` times out at
 90/120/180 s, dashboard reads 0 runs while `wandb/run-*` exist locally; HF downloads stall; pip/git glacial.
@@ -240,7 +240,7 @@ backend is not mirror-proxied; (b) `no_proxy` lists `modelscope.com` not `models
 forced through international proxy = slower); (c) a curl test run without turbo measures the wrong path.
 *Fix:* `export HF_HUB_DISABLE_XET=1` (or `pip uninstall -y hf_xet`) with `HF_ENDPOINT=https://hf-mirror.com`,
 or pull from ModelScope to a plain dir + load via local-path override; wrap in a `timeout … && break`
-resume loop. Detail → `references/china-network.md`.
+resume loop. Detail → `references/run-remote/china-network.md`.
 
 **AD3 — cross-region instances cannot share FS.** *Symptom:* two instances in different regions see
 identical `/root/autodl-fs/` paths but files written from one are invisible to the other. *Root cause:* FS
@@ -277,7 +277,7 @@ zero runs; `/data/runs` returns `[]`. *Root cause:* the image autostarts `tensor
 /root/tf-logs` and the tile proxies that pid; `--logdir` is hard-pinned and not reconfigurable in-container.
 *Fix:* write `SummaryWriter(log_dir="/root/tf-logs/<run>")`, or `ln -sfn <your-tb> /root/tf-logs/<run>`
 (the pinned TB's `--reload=5` picks it up in ~5 s); verify with `curl … /data/runs`, not `ss`. (Also:
-restart the TB server to evict STALE cached tags after deleting/renaming runs.) The cross-platform "live panel silently empty" class (path/port/process mismatch on any platform) is the general form → `references/gotchas_universal.md` U39.
+restart the TB server to evict STALE cached tags after deleting/renaming runs.) The cross-platform "live panel silently empty" class (path/port/process mismatch on any platform) is the general form → `references/run-remote/gotchas_universal.md` U39.
 
 **AD8 — wandb val-phase CPU memory spike to 30+ GB at epoch 1 end.** *Symptom:* at the end of epoch 1
 (validation), cgroup memory jumps from ~8 GB to 30+ GB, sometimes wedging the instance. *Root cause:*
@@ -318,7 +318,7 @@ TB_LOGDIR=/root/tf-logs               # platform TB is pinned here (AD7)
 **Credential push (AD-specific).** The FS security classifier blocks files matching wandb-key patterns —
 put the key at the **per-instance** `/root/.wandb_key`, never on `/root/autodl-fs`. Stream exactly one
 credential block via stdin so the secret never appears in a command; the wrapper reads it
-into `WANDB_API_KEY` before launch. Secrets-via-stdin pattern → `references/ssh_transport.md`.
+into `WANDB_API_KEY` before launch. Secrets-via-stdin pattern → `references/run-remote/ssh_transport.md`.
 
 **Checked-sync (the gated success line).** `run_one.sh` writes live checkpoints to
 `$DATA_DIR/checkpoints/<name>`, prunes `latest.pth` on success, then syncs `best.pth` to

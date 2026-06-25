@@ -2,12 +2,12 @@
 
 Make a job survive being killed at a random instant — the price of riding the 50–90 %-cheaper
 spot/preemptible/interruptible tier. The whole layer reduces to **principle #8**
-(`references/principles.md`): checkpoint full state to durable storage on a Young/Daly timer, load-latest
+(`references/run-remote/principles.md`): checkpoint full state to durable storage on a Young/Daly timer, load-latest
 unconditionally on startup, write atomically, treat the preemption signal only as an opportunistic
 last-flush. This file is the deep form: per-platform grace windows, the cadence formula with a worked
 number, the atomic-write resume recipe, and a commented Python skeleton.
 
-To jump: `grep -in '<keyword>' references/spot-resilience.md` — keywords: `grace`, `signal`, `young`,
+To jump: `grep -in '<keyword>' references/run-remote/spot-resilience.md` — keywords: `grace`, `signal`, `young`,
 `daly`, `cadence`, `atomic`, `rename`, `resume`, `skeleton`, `managed`, `skypilot`, `sagemaker`, `slurm`.
 
 ## Table of contents
@@ -158,7 +158,7 @@ Universal multi-cloud auto-failover is **out of scope for this skill** — use S
 return here to make the *code* resume-correct so their recovery actually lands on progress
 (`superpowers:verification-before-completion` gates the "it resumed" claim against a loaded checkpoint, not
 a log line). For the elastic / multi-node tier (torchrun `--max-restarts`, Elastic Horovod) see
-`references/multinode.md`; the same invariant holds — the framework restarts processes, the per-epoch
+`references/run-remote/multinode.md`; the same invariant holds — the framework restarts processes, the per-epoch
 snapshot restores state.
 
 ---
@@ -235,6 +235,6 @@ def train(model, opt, sched, dataloader, total_epochs):
 ```
 
 Verify the resume path before trusting it: kill the process mid-epoch, relaunch the *identical* command,
-and confirm step/epoch/loss continue rather than reset (this is the `verifying-dl-experiments`
+and confirm step/epoch/loss continue rather than reset (this is the `references/verifying/methodology.md`
 reproducibility check, applied to preemption). Trust the **loaded** checkpoint, not the "resumed" log line
 (principle #3).

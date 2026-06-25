@@ -31,8 +31,8 @@ job, and **copy results off before `destroy`** — the only verb that stops the 
 - §7 TOP GOTCHAS — VAST1–VAST13, platform-pinned + Platform-specific debugging
 - §8 SCRIPT OVERRIDES — values to parameterize `scripts/`
 
-Universal gotchas are NOT restated here — see `references/gotchas_universal.md`. Spot cadence math and
-atomic-resume live in `references/spot-resilience.md`.
+Universal gotchas are NOT restated here — see `references/run-remote/gotchas_universal.md`. Spot cadence math and
+atomic-resume live in `references/run-remote/spot-resilience.md`.
 
 **The one fact that reshapes everything:** vast.ai is a **decentralized marketplace of third-party hosts**,
 not a uniform first-party cloud. Consequences that diverge from AutoDL: **no platform-wide shared FS**, **no
@@ -131,7 +131,7 @@ instance — discover them at runtime, never hard-code. **Hard cap 64 open ports
 
 **Rule:** if bulk transfer must work, require **direct-TCP** at create time. `vastai copy` "uses rsync and is
 generally fast and efficient, subject to single-link upload/download constraints" — for a multi-GB result,
-direct + a resumable loop (`references/gotchas_universal.md` U12). For a big *inbound* dataset, prefer
+direct + a resumable loop (`references/run-remote/gotchas_universal.md` U12). For a big *inbound* dataset, prefer
 `wget`/`curl` from a cloud bucket over proxied SSH (much higher throughput). Custom services use Docker `-p`
 (e.g. `-p 8081:8081`); Jupyter defaults to internal 8080 gated by `JUPYTER_TOKEN` (override the port via
 `JUPYTER_PORT`).
@@ -147,7 +147,7 @@ frontmatter is `free_egress: host-dependent`, not `true`.
 **China relevance: none at the platform level.** No China datacenters, no `/etc/network_turbo` equivalent, no
 built-in HF mirror. The HF-unreachable problem still exists at the *workload* level from some hosts, but the
 fix is the job's **own** `HF_ENDPOINT=https://hf-mirror.com` / `hf_transfer`, not a platform script — see
-`references/gotchas_universal.md` (HF download) for the resumable-download ladder.
+`references/run-remote/gotchas_universal.md` (HF download) for the resumable-download ladder.
 
 → **verify:** `ssh <alias> 'echo ok'` over the **direct** endpoint, then a 1-file `vastai copy` round-trip
 exits 0.
@@ -184,7 +184,7 @@ platform ("can reduce costs by fifty percent or even more"), far more first-clas
 
 **Orchestrator pattern:** poll `actual_status` / `status_msg` on a timer; on preemption, restart (or
 re-launch on a new offer) and let `onstart.sh` + checkpoint-resume recover. Cadence formula (Young/Daly) and
-atomic temp→fsync→rename resume → `references/spot-resilience.md`.
+atomic temp→fsync→rename resume → `references/run-remote/spot-resilience.md`.
 
 → **verify:** kill-and-resume drill — `vastai stop instance <id>` then `start`; the job resumes from the last
 checkpoint step, not epoch 0.
@@ -245,7 +245,7 @@ the disk and there is **no shared FS to fall back on**, the confirmation gate ma
 ## 7. TOP GOTCHAS  (platform-pinned; Symptom → Root cause → Fix)
 
 Universal gotchas (CRLF, cgroup OOM, silent-sync, HF stalls, zombie VRAM, GPU-0%-util, scp-resets,
-egress-surcharge) live in `references/gotchas_universal.md` — not repeated here.
+egress-surcharge) live in `references/run-remote/gotchas_universal.md` — not repeated here.
 
 - **VAST1 — surprise bill on a "stopped" instance.** Symptom: a stopped, idle instance keeps charging for
   days, even past a negative balance. → Root cause: `stop` halts compute only; **disk bills forever while
@@ -265,7 +265,7 @@ egress-surcharge) live in `references/gotchas_universal.md` — not repeated her
 - **VAST4 — job dies mid-step with no warning.** Symptom: interruptible run vanishes abruptly. → Root cause:
   bid preemption with **~0 s notice and no SIGTERM**; a flush handler never fires. → Fix: periodic checkpoint
   to disk on a Young/Daly timer + load-latest-on-resume; poll `actual_status`/`status_msg` and restart (§4,
-  `references/spot-resilience.md`). The bid can't be raised on a live instance — re-launch elsewhere if the
+  `references/run-remote/spot-resilience.md`). The bid can't be raised on a live instance — re-launch elsewhere if the
   GPU is gone.
 - **VAST5 — CUDA driver mismatch on a fresh box.** Symptom: `torch.cuda.is_available()` is False / driver
   mismatch error. → Root cause: **CUDA ships in the Docker image, not the host**; the image's CUDA may be

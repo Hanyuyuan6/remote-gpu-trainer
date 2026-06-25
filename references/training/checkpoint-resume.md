@@ -1,13 +1,15 @@
+> Applies to both local and remote runs.
+
 # Correct checkpointing & idempotent resume — full state, atomic write, sharded checkpoints, framework APIs
 
 Make a training job resume **exactly where it stopped** after any kill — not "reload the weights and
 silently restart the epoch." This layer owns the *mechanics*: what FULL state to save, how to write it
 without corruption, how to load it unconditionally, and the framework-specific knobs (FSDP / DeepSpeed /
 HF Trainer / Accelerate / Lightning) plus the resume **bugs** that make a job look resumed while it
-quietly lost progress. **verifying-dl-experiments** (**REQUIRED**) owns *is the resumed number correct* —
+quietly lost progress. **references/verifying/methodology.md** (**REQUIRED**) owns *is the resumed number correct* —
 e.g. proving step/epoch/loss actually continued instead of resetting is its reproducibility check applied
 here. The spot/preemption *cadence* (when + how often, Young/Daly) lives in
-`references/spot-resilience.md` (**REQUIRED** for any interruptible/spot tier) — this file is the *content
+`references/run-remote/spot-resilience.md` (**REQUIRED** for any interruptible/spot tier) — this file is the *content
 and correctness* of each checkpoint; that file is the *timing*.
 
 To jump: `grep -in '<keyword>' references/training/checkpoint-resume.md` (e.g. `atomic`, `rename`,
@@ -20,7 +22,7 @@ To jump: `grep -in '<keyword>' references/training/checkpoint-resume.md` (e.g. `
 - **Sharded checkpoints (multi-GPU)** — C5 FSDP-FULL_STATE_DICT-rank0-OOM · C6 FSDP-SHARDED_STATE_DICT · C7 DCP-(dcp.save/load) · C8 DeepSpeed-ZeRO-dir+zero_to_fp32
 - **Framework APIs** — C9 HF-Trainer-resume_from_checkpoint+save_total_limit · C10 Accelerate-save_state/load_state · C11 Lightning-ModelCheckpoint+ckpt_path
 - **The resume BUGS** — C12 epoch-restarts · C13 data-reshuffles/order · C14 LR-schedule-resets · C15 scaler-not-restored · C16 EMA-not-saved · C17 save_total_limit-deletes-best · C18 strict-load-key-mismatch
-- **Pointers** — disk-full on save → gotchas_universal.md U6 · silent sync → U33 · keepable-policy/save_top_k → verifying-dl-experiments (skill) · cadence/Young-Daly → spot-resilience.md
+- **Pointers** — disk-full on save → gotchas_universal.md U6 · silent sync → U33 · keepable-policy/save_top_k → references/verifying/methodology.md (skill) · cadence/Young-Daly → spot-resilience.md
 
 ---
 
@@ -52,7 +54,7 @@ the spot-resilience §3 list):
 | EMA / SWA shadow weights (if used) | the EMA copy is often what's evaluated — losing it = eval on the wrong weights (C16) |
 | best-metric-so-far + `best.pth` selection state | so "best" survives a restart instead of resetting |
 
-The runnable atomic skeleton that assembles this dict is in `references/spot-resilience.md` §5 — do not
+The runnable atomic skeleton that assembles this dict is in `references/run-remote/spot-resilience.md` §5 — do not
 duplicate it; this table is the *checklist*, that is the *code*.
 
 ### C2 — Write atomically: tmp → fsync → os.replace (a kill mid-write corrupts a naive save)
@@ -73,8 +75,8 @@ os.replace(tmp, ckpt_path)                                   # all-or-nothing; k
 ```
 Keep the previous `latest.pth` valid until the rename returns (a kill at any instant leaves one intact
 file). `os.replace` (not `os.rename`) also works on Windows for the local-test path. Full recipe +
-rationale: `references/spot-resilience.md` §3. Disk-full *during* the save is a separate failure with the
-same `.tmp` left behind → `references/gotchas_universal.md` U6 (pre-budget + prune `latest`, keep `best`).
+rationale: `references/run-remote/spot-resilience.md` §3. Disk-full *during* the save is a separate failure with the
+same `.tmp` left behind → `references/run-remote/gotchas_universal.md` U6 (pre-budget + prune `latest`, keep `best`).
 
 ### C3 — Load-latest UNCONDITIONALLY on startup → idempotent resume
 
@@ -88,7 +90,7 @@ retry) re-trains from zero. A divergent "first launch" code path also drifts fro
 **identical launch command** converges to the same end state no matter how many times it runs. This is
 what makes principle #7's "retry the identical config" actually *resume* instead of restart, and it is the
 universal spine (principle #8) under SSH-drop / Slurm-walltime / K8s-reschedule / spot-preemption. Skeleton:
-`references/spot-resilience.md` §3 (`load_latest_if_any`).
+`references/run-remote/spot-resilience.md` §3 (`load_latest_if_any`).
 
 ### C4 — Checkpoint to the platform's DURABLE location, not local scratch
 
@@ -102,7 +104,7 @@ is gone (principle #4 — know what survives stop vs destroy).
 or mirror local→durable on the checkpoint timer. The single biggest portability trap is assuming local
 disk survives — see each profile's STORAGE survival-matrix and the SKILL Quick-reference table. Gate the
 sync on the actual copy result, never an unconditional `echo synced` →
-`references/gotchas_universal.md` U33.
+`references/run-remote/gotchas_universal.md` U33.
 
 ---
 
@@ -200,7 +202,7 @@ AMP `scaler.pt` — the full state. Without `resume_from_checkpoint` the run sta
 C3; `trainer_utils.get_last_checkpoint(output_dir)` finds it in code). `save_strategy="steps"` +
 `save_steps=N` (or `"epoch"`) sets cadence; **`save_total_limit=k`** keeps only the `k` most-recent
 `checkpoint-*` and **deletes older ones in `output_dir`** — the built-in disk-budget knob (pairs with
-`references/gotchas_universal.md` U6). `load_best_model_at_end=True` + `metric_for_best_model` +
+`references/run-remote/gotchas_universal.md` U6). `load_best_model_at_end=True` + `metric_for_best_model` +
 `greater_is_better` reloads the best checkpoint at the end **and** protects it from `save_total_limit`
 deletion (C17).
 
@@ -248,14 +250,14 @@ states, callback states, loop state, and the 16-bit scaling factor (AMP)
 ## The resume BUGS (looks resumed, silently lost progress)
 
 These are the "it ran without error but the result is wrong" traps — confirm the fix with the
-`verifying-dl-experiments` reproducibility check (**REQUIRED**): kill mid-run, relaunch the *identical*
+`references/verifying/methodology.md` reproducibility check (**REQUIRED**): kill mid-run, relaunch the *identical*
 command, and verify step/epoch/loss **continue** rather than reset.
 
 ### C12 — Epoch/step restarts from 0 despite "resuming"
 
 **Symptom**: tracker shows a second run starting at epoch 1; total trained epochs exceed the schedule;
 LR warm-up replays. (The remote-ops version of this — a tmux script re-executed mid-run — is
-`references/gotchas_universal.md` U2.)
+`references/run-remote/gotchas_universal.md` U2.)
 
 **Root cause**: the loop is `for epoch in range(total_epochs)` with a hardcoded `0` start; the saved
 `epoch`/`step` was never read back, or was saved but not used to seed the range.
@@ -319,7 +321,7 @@ saving only the live model `state_dict` loses it, so EMA reinitializes from the 
 
 **Fix**: include `ema.state_dict()` (and SWA `AveragedModel` / `swa_scheduler` state) in the checkpoint
 dict (C1) and restore it. In Lightning, persist it via `on_save_checkpoint`/`on_load_checkpoint` (C11).
-This is a *which-weights-are-correct* concern at the boundary — cross-link **verifying-dl-experiments**
+This is a *which-weights-are-correct* concern at the boundary — cross-link **references/verifying/methodology.md**
 (**REQUIRED**) for confirming the evaluated weights are the intended ones.
 
 ### C17 — `save_total_limit` / `save_top_k` deletes the very checkpoint resume needs
@@ -334,8 +336,8 @@ one deleted.
 **Fix**: keep an explicit `last`/`latest` alongside the top-k (`save_last=True` in Lightning, C11; in HF,
 `load_best_model_at_end=True` makes Trainer preserve the best checkpoint past `save_total_limit`). General
 keepable-checkpoint *policy* (how many, which selection criterion, `save_top_k ≤ 3`, prune `latest`) is
-owned by **verifying-dl-experiments** (**REQUIRED**); the disk-budget consequence is
-`references/gotchas_universal.md` U6.
+owned by **references/verifying/methodology.md** (**REQUIRED**); the disk-budget consequence is
+`references/run-remote/gotchas_universal.md` U6.
 
 ### C18 — `load_state_dict` key mismatch on resume (`module.` prefix, compiled-model prefix)
 
@@ -357,12 +359,12 @@ while debugging a resume so a silent partial load can't masquerade as success; o
 ## Pointers — owned elsewhere, do NOT restate here
 
 - **Cadence — when/how often** (Young/Daly `W = sqrt(2·mu·C)`, grace windows, opportunistic SIGTERM
-  last-flush, the runnable atomic skeleton) → `references/spot-resilience.md` (**REQUIRED**, spot tier).
+  last-flush, the runnable atomic skeleton) → `references/run-remote/spot-resilience.md` (**REQUIRED**, spot tier).
 - **Disk-full on save** (pre-budget, prune `latest`, keep `best`, `.tmp` recovery) →
-  `references/gotchas_universal.md` U6; **silent "synced" line** → U33; **inode exhaustion** → U7.
+  `references/run-remote/gotchas_universal.md` U6; **silent "synced" line** → U33; **inode exhaustion** → U7.
 - **Sharding a model that won't fit** (FSDP wrap policy, ZeRO stages, offload) is the *fitting* concern →
   `references/training/oom-memory.md` M9/M10; this file owns *checkpointing* the sharded state.
 - **Multi-rank save/load collectives + elastic restart** (torchrun `--max-restarts` restores from the
-  checkpoint) → `references/training/distributed-launch.md`, `references/multinode.md`.
+  checkpoint) → `references/training/distributed-launch.md`, `references/run-remote/multinode.md`.
 - **Keepable-checkpoint policy + "is the resumed/best number real"** (selection criterion, `save_top_k`,
-  proving step/epoch/loss continued) → **verifying-dl-experiments** (**REQUIRED**).
+  proving step/epoch/loss continued) → **references/verifying/methodology.md** (**REQUIRED**).

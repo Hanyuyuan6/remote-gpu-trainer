@@ -3,7 +3,7 @@
 #
 # Fire on a cadence from the host's recurring runner (Claude Code `/loop 30m`; cron
 # `3,33 * * * *` — offset off :00/:30 to dodge platform load spikes; Codex/Cursor
-# Automations → references/monitoring_patterns.md §7). This is the §3 **L2 patrol** body:
+# Automations → references/run-remote/monitoring_patterns.md §7). This is the §3 **L2 patrol** body:
 # one combined ssh round-trip → a decision → a 3-5 line report EVEN IF nothing changed.
 #
 # READ-ONLY: never edits, restarts, or deletes anything (principles #6/#9). Watches

@@ -1,10 +1,12 @@
+> Applies to both local and remote runs.
+
 # Per-domain training gotchas — make each domain's run start, not lie, and not silently mistrain
 
 The cross-cutting layers (precision, OOM, throughput, checkpoint, distributed) hold everywhere; this file
 is the **domain-shaped** residue — the data-format, masking, normalization, schedule, and freezing traps
 that only bite LLM / vision / diffusion / RL / VLM training. Each entry is **Symptom → Root cause → Fix**
 with the exact knob. This layer owns *making the domain pipeline RUN and debugging its mechanics*;
-**verifying-dl-experiments** owns *is the converged number real* (collapse-vs-real-effect, train/val
+**references/verifying/methodology.md** owns *is the converged number real* (collapse-vs-real-effect, train/val
 leakage, metric validity, constant/degenerate output). Cross-link it (**REQUIRED**) at every "loss is fine
 but the output/metric is wrong" fork — the headline domain failures (diffusion samples bad at low loss,
 mAP=0, reward collapse, VLM ignores the image) are exactly that shape.
@@ -20,7 +22,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 - **Diffusion** — DF1 loss-low-samples-bad (cross-link) · DF2 EMA-weights · DF3 VAE-scaling · DF4 noise-schedule/timestep · DF5 CFG-conditioning-dropout · DF6 sampler-vs-model · DF7 SNR-weighting · DF8 flow-matching-shift/schedule
 - **RL** — R1 reward-collapse · R2 KL-blowup · R3 whitening · R4 replay/obs-normalization · R5 non-stationarity · R6 seed-variance (cross-link)
 - **VLM** — X1 stage-freeze · X2 projector-only-stage1 · X3 per-group-LR · X4 image-token-truncation · X5 alignment-collapse (cross-link)
-- **Pointers** — precision-stability.md, oom-memory.md, gotchas_universal.md, verifying-dl-experiments (skill)
+- **Pointers** — precision-stability.md, oom-memory.md, gotchas_universal.md, references/verifying/methodology.md (skill)
 
 ---
 
@@ -34,7 +36,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### L2 — Loss over prompt + pad tokens dilutes the signal → mask with −100
 **Symptom**: SFT "trains" but parrots the prompt / barely follows instructions; loss plausible but flat.
 **Root cause**: HF LM loss is `CrossEntropyLoss(ignore_index=-100)` — only `-100` positions are skipped. Leaving the prompt-prefix labels and pad labels as real ids averages the loss over "predict the prompt / predict pad."
-**Fix**: set labels to `-100` at **both** the prompt prefix (train only on the completion) and all padding positions. TRL `SFTTrainer` `completion_only_loss` / `DataCollatorForCompletionOnlyLM` does the prefix masking — verify it fired (decode one masked label row). Whether the gradient hits the right tokens is a smoke-target → cross-link **verifying-dl-experiments** (**REQUIRED**). ([gpt2 thread](https://huggingface.co/gpt2/discussions/34))
+**Fix**: set labels to `-100` at **both** the prompt prefix (train only on the completion) and all padding positions. TRL `SFTTrainer` `completion_only_loss` / `DataCollatorForCompletionOnlyLM` does the prefix masking — verify it fired (decode one masked label row). Whether the gradient hits the right tokens is a smoke-target → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([gpt2 thread](https://huggingface.co/gpt2/discussions/34))
 
 ### L3 — `pad_token` unset → pad error or silent pad-with-token-0
 **Symptom**: `ValueError: Asking to pad but the tokenizer does not have a padding token`, or it pads with id 0 (a real token, often `<unk>`/`!`).
@@ -59,7 +61,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### L7 — Eval perplexity wrong from a wrong mask/stride, not the model
 **Symptom**: reported PPL implausible, or differs from a published number on the same checkpoint+data.
 **Root cause**: PPL = `exp(mean NLL over scored tokens)`. Including pad/prompt tokens, or a sliding window that double-counts overlap context as scored tokens, corrupts the denominator.
-**Fix**: score only non-`-100` positions; for long docs use the HF strided window where overlap tokens are `-100` (context, not scored). Whether the number is comparable across runs is metric-validity → cross-link **verifying-dl-experiments** (**REQUIRED**). ([HF perplexity](https://huggingface.co/docs/transformers/perplexity))
+**Fix**: score only non-`-100` positions; for long docs use the HF strided window where overlap tokens are `-100` (context, not scored). Whether the number is comparable across runs is metric-validity → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([HF perplexity](https://huggingface.co/docs/transformers/perplexity))
 
 ### L8 — SFT / DPO / RLHF expect different dataset schemas; the wrong one trains on nothing
 **Symptom**: TRL trainer runs but learns nothing, or errors on a missing column; preference data in an SFT trainer (or vice versa) silently mistrains.
@@ -69,12 +71,12 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### L9 — DPO reward margin won't grow / chosen logps crash → beta + ref-model + collapse
 **Symptom**: `rewards/margins` ~0 or `rewards/accuracies` ~0.5; or `logps/chosen` and `logps/rejected` both plunge (suppresses everything).
 **Root cause**: `beta` controls deviation from the frozen reference — too **small** → policy drifts (implicit KL blows up, degenerate text); too **large** → signal too weak to move the margin. DPO widens the gap mostly by **suppressing the rejected** likelihood, so both logps falling *with a growing margin* is normal; both falling *with a flat margin* is collapse. A lost/absent `ref_model` (some PEFT paths) removes the anchor.
-**Fix**: start `beta=0.1`, raise to 0.3–0.5 if text degrades, lower if the margin won't move. Use `learning_rate≈1e-6` (TRL DPO default; `≈1e-5` for LoRA) — too high is the classic collapse. Health signal: `rewards/margins` ↑, `rewards/accuracies` → ~0.7+. With `ref_model=None` TRL uses the initial policy as the frozen reference — concrete check: a frozen reference must yield **identical** logps for a fixed batch across steps; re-score one batch early and late, and if they drift the anchor is being trained (the trap when `ref_model=None` lacks a real frozen copy). Bug-vs-real-effect on the collapse → cross-link **verifying-dl-experiments** (**REQUIRED**). ([TRL DPO](https://huggingface.co/docs/trl/dpo_trainer))
+**Fix**: start `beta=0.1`, raise to 0.3–0.5 if text degrades, lower if the margin won't move. Use `learning_rate≈1e-6` (TRL DPO default; `≈1e-5` for LoRA) — too high is the classic collapse. Health signal: `rewards/margins` ↑, `rewards/accuracies` → ~0.7+. With `ref_model=None` TRL uses the initial policy as the frozen reference — concrete check: a frozen reference must yield **identical** logps for a fixed batch across steps; re-score one batch early and late, and if they drift the anchor is being trained (the trap when `ref_model=None` lacks a real frozen copy). Bug-vs-real-effect on the collapse → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([TRL DPO](https://huggingface.co/docs/trl/dpo_trainer))
 
 ### L10 — Gated/private model 401s mid-Trainer → authenticate BEFORE construction
 **Symptom**: `401`/`GatedRepoError` when the Trainer loads a Llama/Gemma/Mistral base despite granted access; or `push_to_hub` can't write.
 **Root cause**: the token must be visible to the process **before** the gated `from_pretrained` / Trainer-internal load; setting it after is too late.
-**Fix**: push the token first (env/stdin, **never inline the literal**): set `HF_TOKEN`, or `huggingface_hub.login(token=os.environ["HF_TOKEN"])` at the top before any `from_pretrained`. `push_to_hub` needs a **write**-scope token + `hub_model_id` in `TrainingArguments`. Verify `huggingface-cli whoami` before launch — on a metered box a 401 wastes a full reload. Secrets transport → `references/ssh_transport.md` (U34); offline-without-key → gotchas_universal.md U35. ([HF gated](https://huggingface.co/docs/hub/en/models-gated))
+**Fix**: push the token first (env/stdin, **never inline the literal**): set `HF_TOKEN`, or `huggingface_hub.login(token=os.environ["HF_TOKEN"])` at the top before any `from_pretrained`. `push_to_hub` needs a **write**-scope token + `hub_model_id` in `TrainingArguments`. Verify `huggingface-cli whoami` before launch — on a metered box a 401 wastes a full reload. Secrets transport → `references/run-remote/ssh_transport.md` (U34); offline-without-key → gotchas_universal.md U35. ([HF gated](https://huggingface.co/docs/hub/en/models-gated))
 
 ---
 
@@ -83,7 +85,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### V1 — Normalization mismatch train↔eval → near-zero accuracy on a "trained" model
 **Symptom**: training loss falls but val/test is near-chance; or a fine-tuned backbone is far worse than its pretrained eval.
 **Root cause**: pretrain `(mean,std)` (ImageNet `mean=[.485,.456,.406] std=[.229,.224,.225]`) differs between train/eval paths, or one normalizes to `[0,1]` and the other `[0,255]`; or RGB vs BGR (OpenCV loads BGR). A reported CenterNet case got post-norm mean `-115`, std `8` from wrong channel stats.
-**Fix**: use the **exact** pretrain normalization, identically in train and eval; match channel order. Print one input tensor's per-channel mean/std — should be ~`N(0,1)`. Remaining gap = real-effect vs this bug → cross-link **verifying-dl-experiments** (**REQUIRED**; input-normalization is a named check). ([why-normalize](https://inside-machinelearning.com/en/why-and-how-to-normalize-data-object-detection-on-image-in-pytorch-part-1/), [tf/models #10778](https://github.com/tensorflow/models/issues/10778))
+**Fix**: use the **exact** pretrain normalization, identically in train and eval; match channel order. Print one input tensor's per-channel mean/std — should be ~`N(0,1)`. Remaining gap = real-effect vs this bug → cross-link **references/verifying/methodology.md** (**REQUIRED**; input-normalization is a named check). ([why-normalize](https://inside-machinelearning.com/en/why-and-how-to-normalize-data-object-detection-on-image-in-pytorch-part-1/), [tf/models #10778](https://github.com/tensorflow/models/issues/10778))
 
 ### V2 — Train-time augmentation applied at eval → unstable/depressed metrics
 **Symptom**: eval numbers flicker run-to-run or sit below the training-curve val.
@@ -93,7 +95,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### V3 — Detection mAP=0 despite a falling loss → box-format / label-id / scale mismatch
 **Symptom**: detection loss decreases normally but mAP is exactly 0 (or ~0) at every eval.
 **Root cause**: a format mismatch the loss tolerates but eval doesn't — (1) box format `cxcywh`/`xywh` vs evaluator's `xyxy`, or normalized `[0,1]` vs absolute pixels; (2) class id off-by-one (0-indexed model vs 1-indexed COCO, 0=background); (3) boxes in resized space matched against original-res GT; (4) eval score threshold so high everything is filtered.
-**Fix**: assert the eval pipeline's box format + class indexing, convert explicitly (`torchvision.ops.box_convert`), and visualize 2–3 predicted boxes before trusting the metric. mAP=0 with healthy loss is almost never the model — it's eval glue; the all-zero-metric pattern → cross-link **verifying-dl-experiments** (**REQUIRED**). ([tf/models #10778](https://github.com/tensorflow/models/issues/10778), [bbox formats](https://www.learnml.io/posts/a-guide-to-bounding-box-formats/))
+**Fix**: assert the eval pipeline's box format + class indexing, convert explicitly (`torchvision.ops.box_convert`), and visualize 2–3 predicted boxes before trusting the metric. mAP=0 with healthy loss is almost never the model — it's eval glue; the all-zero-metric pattern → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([tf/models #10778](https://github.com/tensorflow/models/issues/10778), [bbox formats](https://www.learnml.io/posts/a-guide-to-bounding-box-formats/))
 
 ### V4 — Detections vanish after NMS / anchor mismatch → no boxes survive
 **Symptom**: raw head outputs look reasonable but final detections are empty or absurdly few.
@@ -103,12 +105,12 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### V5 — Segmentation mIoU=0 or NaN → `ignore_index` / label off-by-one
 **Symptom**: seg loss trains but mIoU is 0 (or a class NaN); or loss is NaN from step 1.
 **Root cause**: label/class-index inconsistency — a void value (commonly `255`) not excluded → treated as a class id ≥ `num_classes` (out-of-range / pollutes IoU); or off-by-one (0=background but labels start at 1, or a `reduce_labels` 0→255 shift applied inconsistently between loss and metric).
-**Fix**: set the **same** `ignore_index` in **both** loss and metric — `CrossEntropyLoss(ignore_index=255)` and mIoU mask `(label != 255)`; confirm `label.max() < num_classes` after any shift; apply reduction identically. mIoU=0 with falling loss = all-zero-metric pattern → cross-link **verifying-dl-experiments** (**REQUIRED**). ([torchmetrics #2747](https://github.com/Lightning-AI/torchmetrics/issues/2747), [HF ignore_index](https://discuss.huggingface.co/t/understanding-ignore-index-and-reduce-labels/64587))
+**Fix**: set the **same** `ignore_index` in **both** loss and metric — `CrossEntropyLoss(ignore_index=255)` and mIoU mask `(label != 255)`; confirm `label.max() < num_classes` after any shift; apply reduction identically. mIoU=0 with falling loss = all-zero-metric pattern → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([torchmetrics #2747](https://github.com/Lightning-AI/torchmetrics/issues/2747), [HF ignore_index](https://discuss.huggingface.co/t/understanding-ignore-index-and-reduce-labels/64587))
 
 ### V6 — Severe class imbalance → model predicts only the majority class
 **Symptom**: high pixel/sample accuracy but rare classes never predicted; minority recall ~0.
 **Root cause**: unweighted cross-entropy is dominated by the majority class; "always predict majority" is the easy degenerate solution.
-**Fix**: weight the loss (`CrossEntropyLoss(weight=...)` inverse-frequency) or focal loss (detection); class-balanced sampler. Report **per-class / macro** metrics, never just overall — a high aggregate hiding a collapsed minority is degenerate output → cross-link **verifying-dl-experiments** (**REQUIRED**).
+**Fix**: weight the loss (`CrossEntropyLoss(weight=...)` inverse-frequency) or focal loss (detection); class-balanced sampler. Report **per-class / macro** metrics, never just overall — a high aggregate hiding a collapsed minority is degenerate output → cross-link **references/verifying/methodology.md** (**REQUIRED**).
 
 ### V7 — Tiny per-GPU batch → BatchNorm stats garbage → unstable/poor training
 **Symptom**: detection/seg at batch 1–2 per GPU is unstable or underperforms a larger-batch run.
@@ -122,7 +124,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### DF1 — Loss is low but samples are bad → the canonical "loss ≠ quality"
 **Symptom**: the noise-prediction MSE converges nicely but samples are blurry, mode-collapsed, or wrong.
 **Root cause**: diffusion loss (predict noise at a random timestep) is **weakly correlated with sample quality** — good average noise-prediction still compounds errors over the sampling trajectory. Real culprits are downstream: missing EMA (DF2), wrong VAE scaling (DF3), train/sample schedule mismatch (DF4/DF6), no/over CFG (DF5).
-**Fix**: the textbook **is-the-number-real** fork → cross-link **verifying-dl-experiments** (**REQUIRED**; it owns loss-low-output-bad). Mechanically walk DF2→DF6; the single most common miss is evaluating **raw** weights instead of **EMA** (DF2). ([stability techniques](https://apxml.com/courses/advanced-diffusion-architectures/chapter-4-advanced-diffusion-training/training-stability-techniques))
+**Fix**: the textbook **is-the-number-real** fork → cross-link **references/verifying/methodology.md** (**REQUIRED**; it owns loss-low-output-bad). Mechanically walk DF2→DF6; the single most common miss is evaluating **raw** weights instead of **EMA** (DF2). ([stability techniques](https://apxml.com/courses/advanced-diffusion-architectures/chapter-4-advanced-diffusion-training/training-stability-techniques))
 
 ### DF2 — Sampling from raw (non-EMA) weights → worse than the "same" model
 **Symptom**: samples from the just-saved checkpoint look worse than expected; quality jumps with an EMA checkpoint.
@@ -142,7 +144,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### DF5 — Conditioning never dropped during training → CFG is a no-op / model ignores prompt
 **Symptom**: changing `guidance_scale` at inference barely changes output, or the model ignores conditioning.
 **Root cause**: CFG needs a learned **unconditional** path, trained by randomly replacing the condition with a null embedding for a fraction `p_drop` of examples. No dropout ⇒ no usable unconditional estimate ⇒ CFG no-op.
-**Fix**: during training drop the condition `p_drop≈0.1` (replace with null embedding). At inference use `guidance_scale` ~5–15 for T2I (higher = more prompt adherence, lower diversity). Model-ignores-input is a verifying-dl-experiments concern (**REQUIRED**); the training-side root cause is the missing dropout. ([CFG theory](https://apxml.com/courses/advanced-diffusion-architectures/chapter-4-advanced-diffusion-training/classifier-free-guidance-theory))
+**Fix**: during training drop the condition `p_drop≈0.1` (replace with null embedding). At inference use `guidance_scale` ~5–15 for T2I (higher = more prompt adherence, lower diversity). Model-ignores-input is a references/verifying/methodology.md concern (**REQUIRED**); the training-side root cause is the missing dropout. ([CFG theory](https://apxml.com/courses/advanced-diffusion-architectures/chapter-4-advanced-diffusion-training/classifier-free-guidance-theory))
 
 ### DF6 — Sampler ≠ model: a sampler config that doesn't match the trained objective
 **Symptom**: switching samplers wildly changes quality; one sampler gives noise.
@@ -157,7 +159,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### DF8 — Flow-matching / rectified-flow objective: wrong shift or schedule → garbage samples at low loss
 **Symptom**: training or fine-tuning an SD3 / Flux-class **flow-matching** model; the loss is low and stable but samples are noisy/structureless — and noticeably worse away from the training resolution.
 **Root cause**: flow matching predicts a constant-velocity path between noise and data (not ε-noise like DDPM — DF4), and its schedule is **resolution-dependent**: `FlowMatchEulerDiscreteScheduler` shifts the sigma/timestep distribution by image sequence length (`use_dynamic_shifting`, `base_shift`/`max_shift`, `mu`). Train with a `shift`/`prediction_type` that doesn't match the sampler — or sample a resolution the shift wasn't set for — and the model runs off its trained noise distribution → the trajectory drifts → bad samples while per-step loss still looks fine.
-**Fix**: keep training and sampling on the **identical** schedule — same flow-matching scheduler, same `shift`/`use_dynamic_shifting`, and set `mu` from the actual image sequence length at inference. A mismatched scheduler/`prediction_type` yields pure-noise/artifact output. Loss-low-samples-bad verdict → **verifying-dl-experiments** (REQUIRED); base case + EMA → DF1/DF2; schedule/sampler mechanics → DF4/DF6. ([FlowMatchEulerDiscreteScheduler](https://huggingface.co/docs/diffusers/en/api/schedulers/flow_match_euler_discrete); [SD3 paper](https://huggingface.co/papers/2403.03206))
+**Fix**: keep training and sampling on the **identical** schedule — same flow-matching scheduler, same `shift`/`use_dynamic_shifting`, and set `mu` from the actual image sequence length at inference. A mismatched scheduler/`prediction_type` yields pure-noise/artifact output. Loss-low-samples-bad verdict → **references/verifying/methodology.md** (REQUIRED); base case + EMA → DF1/DF2; schedule/sampler mechanics → DF4/DF6. ([FlowMatchEulerDiscreteScheduler](https://huggingface.co/docs/diffusers/en/api/schedulers/flow_match_euler_discrete); [SD3 paper](https://huggingface.co/papers/2403.03206))
 
 ---
 
@@ -166,7 +168,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### R1 — Reward collapses / output degenerates mid-training
 **Symptom**: average reward suddenly drops, responses get short/repetitive or refuse, length collapses.
 **Root cause**: reward hacking / over-optimization — the policy exploits the reward model's blind spots and drifts far, often after the ratio gets clipped much more and approximate KL spikes.
-**Fix**: strengthen the KL penalty (raise the KL coefficient), lower LR (`≈1e-6` for LLM PPO), reduce PPO update epochs/batch, add a length penalty if length is gamed. Watch reward **and** KL together — a reward jump with a KL spike is hacking, not progress. Bug-vs-real-effect on the collapse → cross-link **verifying-dl-experiments** (**REQUIRED**; it owns collapse/degenerate-output). ([PPO instability](https://apxml.com/courses/rlhf-reinforcement-learning-human-feedback/chapter-4-rl-ppo-fine-tuning/troubleshooting-ppo-instability), [N-details RLHF](https://huggingface.co/blog/the_n_implementation_details_of_rlhf_with_ppo))
+**Fix**: strengthen the KL penalty (raise the KL coefficient), lower LR (`≈1e-6` for LLM PPO), reduce PPO update epochs/batch, add a length penalty if length is gamed. Watch reward **and** KL together — a reward jump with a KL spike is hacking, not progress. Bug-vs-real-effect on the collapse → cross-link **references/verifying/methodology.md** (**REQUIRED**; it owns collapse/degenerate-output). ([PPO instability](https://apxml.com/courses/rlhf-reinforcement-learning-human-feedback/chapter-4-rl-ppo-fine-tuning/troubleshooting-ppo-instability), [N-details RLHF](https://huggingface.co/blog/the_n_implementation_details_of_rlhf_with_ppo))
 
 ### R2 — KL to the reference blows up → policy runs away
 **Symptom**: KL grows without bound; generations go incoherent; "diverges" though loss isn't NaN.
@@ -181,7 +183,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### R4 — Replay buffer / normalization state not checkpointed → resume behaves like cold start
 **Symptom**: an off-policy run (DQN/SAC) resumed from checkpoint acts like a cold start; or a normalized env's stats reset on resume and performance tanks.
 **Root cause**: the replay buffer and the running obs/reward normalization stats are part of training **state** but are often omitted — restoring only weights loses them.
-**Fix**: checkpoint+restore the replay buffer (or accept warmup) **and** the `VecNormalize`/running-stats alongside weights. General checkpoint-everything-stateful (optimizer/scheduler/RNG/step) → `references/training/checkpoint-resume.md`; on spot boxes losing buffer/normstats every preemption silently degrades learning → `references/spot-resilience.md`.
+**Fix**: checkpoint+restore the replay buffer (or accept warmup) **and** the `VecNormalize`/running-stats alongside weights. General checkpoint-everything-stateful (optimizer/scheduler/RNG/step) → `references/training/checkpoint-resume.md`; on spot boxes losing buffer/normstats every preemption silently degrades learning → `references/run-remote/spot-resilience.md`.
 
 ### R5 — Non-stationarity treated as a bug → chasing a moving target
 **Symptom**: value/critic loss won't converge to zero; metrics oscillate even when "working."
@@ -191,7 +193,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### R6 — A single seed's result is not the result → RL variance is huge
 **Symptom**: identical hyperparameters + different seeds give non-overlapping curves; an ablation "win" disappears on re-run.
 **Root cause**: extreme seed variance from algorithm, policy sampling, and environment stochasticity (comparing 5-run point estimates yields >50% Type-I error).
-**Fix**: report aggregate over **≥5 seeds** (more for noisy envs), use **IQM** (interquartile mean) over mean/median, show CIs. A single-seed delta is not a result — squarely **verifying-dl-experiments** territory (bug-vs-real-effect, seed discipline; **REQUIRED**). ([Henderson](https://arxiv.org/pdf/1708.04133), [how-many-seeds](https://arxiv.org/pdf/1806.08295))
+**Fix**: report aggregate over **≥5 seeds** (more for noisy envs), use **IQM** (interquartile mean) over mean/median, show CIs. A single-seed delta is not a result — squarely **references/verifying/methodology.md** territory (bug-vs-real-effect, seed discipline; **REQUIRED**). ([Henderson](https://arxiv.org/pdf/1708.04133), [how-many-seeds](https://arxiv.org/pdf/1806.08295))
 
 ---
 
@@ -200,7 +202,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### X1 — Wrong freeze schedule across stages → alignment never forms or the LLM is wrecked
 **Symptom**: a LLaVA-style VLM doesn't ground on images (ignores visual tokens), or text quality collapses after multimodal finetune.
 **Root cause**: VLM training is **staged**, each stage freezing different towers. Stage 1 (alignment): freeze vision encoder **and** LLM, train **only the projector**. Stage 2 (instruction tuning): unfreeze LLM **and** projector, keep vision encoder frozen. Training the LLM in stage 1 (before the projector aligns) corrupts it; never unfreezing it means it can't use the visual tokens.
-**Fix**: set `requires_grad` per tower per stage per the recipe; print trainable-param counts at each stage start to confirm the freeze took. "Ignores its input image" is model-ignores-input → cross-link **verifying-dl-experiments** (**REQUIRED**). ([LLaVA recipe](https://rohitbandaru.github.io/blog/Vision-Language-Models/))
+**Fix**: set `requires_grad` per tower per stage per the recipe; print trainable-param counts at each stage start to confirm the freeze took. "Ignores its input image" is model-ignores-input → cross-link **references/verifying/methodology.md** (**REQUIRED**). ([LLaVA recipe](https://rohitbandaru.github.io/blog/Vision-Language-Models/))
 
 ### X2 — Projector trained from scratch with the LLM hot → unstable stage-1
 **Symptom**: stage-1 alignment loss is unstable or the projector output is garbage.
@@ -220,7 +222,7 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 ### X5 — Modality alignment collapse: the LLM answers from text priors, not the image
 **Symptom**: the VLM gives plausible answers that ignore the actual image content (language-prior shortcut).
 **Root cause**: weak visual signal (bad projector, frozen-everything, too little alignment data) lets the LLM fall back on its language prior — a degenerate "ignore the input" solution that still lowers loss on text-predictable answers.
-**Fix**: the mechanical fixes are X1–X3 (correct freeze/projector/LR so the visual path contributes). Whether it's genuinely grounding vs shortcutting is **verifying-dl-experiments** (model-ignores-input/degenerate-output; **REQUIRED**) — probe with image-perturbation / counterfactual-image tests, which that skill owns.
+**Fix**: the mechanical fixes are X1–X3 (correct freeze/projector/LR so the visual path contributes). Whether it's genuinely grounding vs shortcutting is **references/verifying/methodology.md** (model-ignores-input/degenerate-output; **REQUIRED**) — probe with image-perturbation / counterfactual-image tests, which that skill owns.
 
 ---
 
@@ -228,8 +230,8 @@ To jump: `grep -in '<keyword>' references/training/by-domain.md` (e.g. `padding`
 
 - **Precision / NaN / loss-spike / z-loss / grad-clip** (L6's general ladder) → `references/training/precision-stability.md`.
 - **OOM, activation checkpointing, LoRA/QLoRA, FSDP/ZeRO, seq-len memory** → `references/training/oom-memory.md`.
-- **Dataloader starvation, GPU-util%, NVMe staging, tar-sharding** → `references/gotchas_universal.md` (U8, U21, U24, U25).
-- **DDP/FSDP launch, SyncBatchNorm under DDP, NCCL** → `references/training/distributed-launch.md`, `references/multinode.md`.
-- **Checkpoint-everything-stateful + atomic resume** (R4's general form) → `references/training/checkpoint-resume.md`, `references/spot-resilience.md`.
+- **Dataloader starvation, GPU-util%, NVMe staging, tar-sharding** → `references/run-remote/gotchas_universal.md` (U8, U21, U24, U25).
+- **DDP/FSDP launch, SyncBatchNorm under DDP, NCCL** → `references/training/distributed-launch.md`, `references/run-remote/multinode.md`.
+- **Checkpoint-everything-stateful + atomic resume** (R4's general form) → `references/training/checkpoint-resume.md`, `references/run-remote/spot-resilience.md`.
 - **"Runs but won't learn": loop wiring, optimizer/LR/weight-decay, loss-function & label form, freezing/BN drift, dataloader correctness** → `references/training/convergence-debugging.md`, `references/training/data-pipeline.md`.
-- **Is the metric/model correct** (collapse, leakage, all-zero metrics, model-ignores-input, seed discipline) → **verifying-dl-experiments** (**REQUIRED** — owns every "bug vs real effect" fork above).
+- **Is the metric/model correct** (collapse, leakage, all-zero metrics, model-ignores-input, seed discipline) → **references/verifying/methodology.md** (**REQUIRED** — owns every "bug vs real effect" fork above).

@@ -16,7 +16,7 @@ local_nvme: true
 
 # RunPod — platform profile
 
-One-line purpose: the per-platform substrate for RunPod Pods — **the Docker image IS the env contract**, a three-tier storage model where the durable mount differs from the parking one, and a teardown verb (`terminate`) that DELETES the volume disk. Read this before Phase 0; it owns every path, port, billing verb, and spot rule the SKILL.md phases delegate here. Universal gotchas are NOT repeated — see `references/gotchas_universal.md`.
+One-line purpose: the per-platform substrate for RunPod Pods — **the Docker image IS the env contract**, a three-tier storage model where the durable mount differs from the parking one, and a teardown verb (`terminate`) that DELETES the volume disk. Read this before Phase 0; it owns every path, port, billing verb, and spot rule the SKILL.md phases delegate here. Universal gotchas are NOT repeated — see `references/run-remote/gotchas_universal.md`.
 
 > **Surface to the user up front (principle #10):** convenience — RunPod's HTTP proxy auto-HTTPS-exposes TB/Jupyter (no tunnel). ⚠️ Danger clocks — a **stopped Pod still bills its volume disk at 2×** and may restart with **zero GPUs** (RP1/RP4), so stop is NOT safe parking; a **low account balance auto-deletes** the Pod; the **~5 GB container disk** silently fills (redirect caches, §8). Decouple durable state onto a Network Volume + **terminate** to truly stop the meter.
 
@@ -66,8 +66,8 @@ Critical properties:
 - **Container disk default is tiny (~5 GB)** — pip wheels, the HF cache, apt and conda all land on `/` by default and silently fill it; raise container-disk size at create time OR redirect every cache onto `/workspace` (RP11, §7-debug).
 - **Volume disk grows, never shrinks** — over-provision conservatively; shrinking requires a fresh Pod (verified docs.runpod.io/pods/storage/types: "Increase only" 2026-06).
 - **Network Volume is datacenter-locked** — attaching one constrains all future GPU deployment to that DC, which "may limit GPU availability and reduce failover options" (verified docs.runpod.io/pods/storage/create-network-volumes 2026-06); on a Pod it must be attached **at creation and cannot be detached later** (RP7). Cross-DC moves are manual: rsync/`runpodctl` between two bridge Pods, or the **S3-compatible API** (manage files without launching compute).
-- **Concurrent-write corruption** — "writing to the same volume from multiple workers simultaneously may cause data corruption" (verified same page 2026-06). Serialize writers; for parallel-ablation fan-out give each cell an **isolated write path** (see `references/parallel_ablation.md`).
-- **No documented inode cap** — RunPod specs GB quotas, not inode counts. Audit GB usage with `du` on the actual mount; the `df -i` discipline from `references/gotchas_universal.md` still applies on any small-many-files eval tree, but there is no AutoDL-style hard ~200K ceiling.
+- **Concurrent-write corruption** — "writing to the same volume from multiple workers simultaneously may cause data corruption" (verified same page 2026-06). Serialize writers; for parallel-ablation fan-out give each cell an **isolated write path** (see `references/run-remote/parallel_ablation.md`).
+- **No documented inode cap** — RunPod specs GB quotas, not inode counts. Audit GB usage with `du` on the actual mount; the `df -i` discipline from `references/run-remote/gotchas_universal.md` still applies on any small-many-files eval tree, but there is no AutoDL-style hard ~200K ceiling.
 - **Network Volumes cannot be encrypted** and are visible to every attached Pod — never write a secret there (§8).
 - **Global networking ≠ shared FS** — RunPod global networking gives Pods a private IP (`<POD_ID>.runpod.internal`) for Pod-to-Pod traffic, NOT a shared filesystem (verified docs.runpod.io/pods/networking 2026-06). Shared *storage* is still a Network Volume, single-DC.
 
@@ -81,7 +81,7 @@ Critical properties:
   2. **Direct TCP** — public IP + a **random external port** that changes on every Pod reset. Required for SSH-scp, DBs, WebSockets, long polls. Request a port number **above 70000** in the TCP config to get a **symmetric (external == internal) mapping** ("not valid port numbers, but signal Runpod to allocate matching internal and external ports").
 - One port cannot be exposed on both HTTP and TCP simultaneously.
 - **Public IP stability differs by cloud (NEW — current fact):** Community Cloud public IPs **may change on migration/restart**; Secure Cloud IPs "should remain stable" (verified expose-ports 2026-06). A pinned SSH target is safer on Secure Cloud.
-- **SSH flavors — proxied SSH cannot transfer files.** *Basic SSH* proxies through `ssh.runpod.io` (works everywhere but **does NOT support `scp`/`sftp`/`rsync`**). *Full SSH* is direct-TCP to the Pod's public IP on exposed port 22 (supports `scp`/`rsync`, needs a public-IP Pod + TCP 22 exposed + SSH daemon running + the key on the account). For bulk code/data transfer, full SSH is mandatory (RP6). Without a public IP, **`runpodctl send` / `receive`** (one-time code, no API key, pre-installed) moves files — but it is rated for **small-to-medium files only**; use full-SSH rsync for large datasets (RP12). SSH-config + resumable-rsync patterns → `references/ssh_transport.md`.
+- **SSH flavors — proxied SSH cannot transfer files.** *Basic SSH* proxies through `ssh.runpod.io` (works everywhere but **does NOT support `scp`/`sftp`/`rsync`**). *Full SSH* is direct-TCP to the Pod's public IP on exposed port 22 (supports `scp`/`rsync`, needs a public-IP Pod + TCP 22 exposed + SSH daemon running + the key on the account). For bulk code/data transfer, full SSH is mandatory (RP6). Without a public IP, **`runpodctl send` / `receive`** (one-time code, no API key, pre-installed) moves files — but it is rated for **small-to-medium files only**; use full-SSH rsync for large datasets (RP12). SSH-config + resumable-rsync patterns → `references/run-remote/ssh_transport.md`.
 
 ---
 
@@ -92,7 +92,7 @@ Two purchase modes, two distinct interruption vectors:
 - **Spot / interruptible** — set `interruptible: true` (REST) or bid via legacy GraphQL. Roughly **~50% cheaper** than On-Demand (verified runpod.io/blog/spot-vs-on-demand-instances-runpod: e.g. A6000 spot $0.232 vs on-demand $0.491/gpu/hr 2026-06; marketing elsewhere cites "up to 60%"). Interruption is **"without notice"** — another user's On-Demand request can reclaim the GPU. Detection signal: **`SIGTERM`, then `SIGKILL` ~5 s later** — only enough to flush a flag or trigger an already-frequent checkpoint, NOT to write a fresh large checkpoint.
 - **On-Demand** — non-interruptible while running, but carries the sneakier **zero-GPU-on-restart** trap (RP1): a stopped Pod is pinned to its host, and if that GPU is rented away the Pod can only restart **with zero GPUs** ("there are no GPUs available on the machine where your Pod was running" — verified docs.runpod.io/references/faq 2026-06). Use it as a data-recovery startup, not a compute one.
 
-**Both vectors demand the same design:** checkpoint full state **continuously on a timer to a Network Volume** (atomic temp→fsync→rename), load-latest **unconditionally** on startup, and relaunch on a **fresh host** — never assume the same machine/GPU is available after a stop. The ~5 s grace is an opportunistic last-flush only, never the primary durability mechanism. Cadence formula (Young/Daly) and atomic-resume pattern → `references/spot-resilience.md`.
+**Both vectors demand the same design:** checkpoint full state **continuously on a timer to a Network Volume** (atomic temp→fsync→rename), load-latest **unconditionally** on startup, and relaunch on a **fresh host** — never assume the same machine/GPU is available after a stop. The ~5 s grace is an opportunistic last-flush only, never the primary durability mechanism. Cadence formula (Young/Daly) and atomic-resume pattern → `references/run-remote/spot-resilience.md`.
 
 ---
 
@@ -121,7 +121,7 @@ Two purchase modes, two distinct interruption vectors:
 
 ---
 
-## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/gotchas_universal.md`)
+## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
 - **RP1 — Zero-GPU-on-restart.** Symptom: a stopped Pod restarts with no GPU attached and refuses compute work ("Zero GPU Pods"). Root cause: a stopped Pod stays bound to its physical host; another user rented that GPU while it was stopped. Fix: keep all durable state on a **Network Volume**, terminate instead of stop, relaunch on a fresh host. (verified docs.runpod.io/references/faq 2026-06)
 - **RP2 — Container disk wiped on stop.** Symptom: code, conda/pip env, or checkpoints gone after a stop. Root cause: only `/workspace` (volume disk) or a Network Volume survives a stop; container disk (`/`) is cleared. Fix: install envs and write all state under `/workspace` (or the Network Volume).
@@ -146,7 +146,7 @@ Quick checks when a RunPod Pod misbehaves (run inside the Pod unless noted):
 - **Stuck initializing / image pull?** A Pod looping in "initializing" is usually a slow/failing image pull or a throttled machine. Watch the **container logs** (web console → the Pod's *Logs* tab, or `runpodctl get pod <id>`); cloning the template to a different machine / cloud often unsticks it.
 - **SSH won't connect on a custom image?** Confirm `sshd` is actually running (`ps aux | grep sshd`), TCP 22 is exposed, and the Dockerfile used `CMD` not `ENTRYPOINT` (RP10); confirm the public key is on the account and matches the local private key.
 - **Env var missing over SSH?** `env | grep <VAR>` in the SSH shell vs the web terminal — divergence is RP12.
-- **Detect a stuck/zombie download:** watch the target grow — `watch -n5 'du -sh /workspace/hf 2>/dev/null; ls -la <partial-file>'`; a `.incomplete`/`.part` file whose size is frozen means a stalled HF pull → re-run with `HF_HUB_ENABLE_HF_TRANSFER=1` (§3). For a robust remote ssh-poll loop, see `references/gotchas_universal.md` U17.
+- **Detect a stuck/zombie download:** watch the target grow — `watch -n5 'du -sh /workspace/hf 2>/dev/null; ls -la <partial-file>'`; a `.incomplete`/`.part` file whose size is frozen means a stalled HF pull → re-run with `HF_HUB_ENABLE_HF_TRANSFER=1` (§3). For a robust remote ssh-poll loop, see `references/run-remote/gotchas_universal.md` U17.
 - **Billing reality check:** the running meter and remaining-balance runtime live in the web console billing page; do not trust "it should be cheap because it's stopped" — a stopped Pod still bills the volume disk at 2× (RP4) and a low balance silently deletes (RP8).
 
 ---

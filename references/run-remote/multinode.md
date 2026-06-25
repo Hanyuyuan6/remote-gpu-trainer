@@ -4,11 +4,11 @@
 runs DDP/FSDP over NVLink/PCIe and never touches the inter-node NCCL transport, fabric-manager, or rendezvous logic
 below. This file is **only** for jobs spanning ≥2 rented instances (multi-node DDP, FSDP, pipeline/tensor parallel,
 or elastic training). It assumes the checkpoint-to-durable + idempotent-resume spine is already in place
-(`references/principles.md` #8; cadence + atomic-write in `references/spot-resilience.md`) — multi-node only changes
+(`references/run-remote/principles.md` #8; cadence + atomic-write in `references/run-remote/spot-resilience.md`) — multi-node only changes
 *how the process group forms and breaks*, never the resume mechanism.
 
 These are all **[P] platform/topology-specific** gotchas. The universal ones (disk, OOM, CRLF, silent sync, spot
-grace) are **not** restated here — see `references/gotchas_universal.md`.
+grace) are **not** restated here — see `references/run-remote/gotchas_universal.md`.
 
 ## Table of contents
 
@@ -20,7 +20,7 @@ grace) are **not** restated here — see `references/gotchas_universal.md`.
 - **Elastic Horovod pause-below-min-np** — pauses then errors (MN6)
 - **First-move checklist** — bring up a healthy multi-node group
 
-To jump: `grep -in <keyword> references/multinode.md` (e.g. `grep -in fabric references/multinode.md`).
+To jump: `grep -in <keyword> references/run-remote/multinode.md` (e.g. `grep -in fabric references/run-remote/multinode.md`).
 
 ---
 
@@ -44,7 +44,7 @@ the cause is local to one box.
   The first node whose log **stops** before the others printed their topology is the culprit.
 - On a rental the fix is operational, not a reseat: restart the service (`systemctl restart nvidia-fabricmanager`)
   if permitted, otherwise **stop that instance and re-rent a different box** — a fabric-manager that won't start is
-  usually a sick host (overlaps the Xid hardware-failure logic in `references/gotchas_universal.md`).
+  usually a sick host (overlaps the Xid hardware-failure logic in `references/run-remote/gotchas_universal.md`).
 
 URL: https://support.crusoecloud.com/hc/en-us/articles/46061806112155-NCCL-Hangs-and-Multi-Node-Training-Stalls-Caused-by-Failed-nvidia-fabricmanager
 
@@ -133,14 +133,14 @@ training state — that is entirely the script's responsibility. A `--max-restar
 load-latest-checkpoint just re-runs `main()` from scratch on every restart.
 
 **Fix.**
-- The per-epoch (or per-N-step) snapshot is what restores state, exactly per `references/principles.md` #8: write
+- The per-epoch (or per-N-step) snapshot is what restores state, exactly per `references/run-remote/principles.md` #8: write
   full state (model + optimizer + LR scheduler + epoch/step + RNG + dataloader position) **atomically**
   (`tmp`→`fsync`→`os.rename`), and **load-latest unconditionally at the top of every launch** so a torchrun restart
-  resumes instead of restarting. Cadence formula + atomic-write detail live in `references/spot-resilience.md`.
+  resumes instead of restarting. Cadence formula + atomic-write detail live in `references/run-remote/spot-resilience.md`.
 - Use the c10d rendezvous backend hosted on a `host:port` (no etcd dependency); set `--max-restarts` to survive the
   expected number of preemptions, not 0.
 - **REQUIRED:** treat the restored run as a *resume of the identical config*, never a hand-patched relaunch — a
-  silently-restarted or reshuffled run is the exact contamination `verifying-dl-experiments` guards against; confirm
+  silently-restarted or reshuffled run is the exact contamination `references/verifying/methodology.md` guards against; confirm
   the resumed step/epoch against the loaded checkpoint before trusting any post-restart metric.
 
 URL: https://docs.pytorch.org/tutorials/beginner/ddp_series_fault_tolerance.html
@@ -164,7 +164,7 @@ capacity to return. It only errors once `HOROVOD_ELASTIC_TIMEOUT` (default **600
 - Raise `HOROVOD_ELASTIC_TIMEOUT` if the spot tier's capacity routinely returns slower than 600 s, so a temporary
   capacity dip resumes rather than aborts.
 - **Pin LR-scaling and data-sharding to `--max-np`, not the live worker count** — otherwise the effective learning
-  rate and shard assignment drift on every membership change, quietly corrupting the run (a `verifying-dl-experiments`
+  rate and shard assignment drift on every membership change, quietly corrupting the run (a `references/verifying/methodology.md`
   concern: a metric from a run whose LR silently rescaled is not a clean datapoint).
 
 URL: https://horovod.readthedocs.io/en/stable/elastic_include.html
@@ -182,9 +182,9 @@ Run this order **before** trusting any multi-node throughput number; it isolates
 - [ ] First real launch with `NCCL_DEBUG=INFO` + `NCCL_ASYNC_ERROR_HANDLING=1`; confirm each rank's `NET/...` line
   names the fast data-plane NIC, not a bridge (MN2, MN3).
 - [ ] In-script load-latest-checkpoint verified to fire on restart **before** relying on `--max-restarts` /
-  elastic membership recovery (MN5, MN6; spine in `references/principles.md` #8).
+  elastic membership recovery (MN5, MN6; spine in `references/run-remote/principles.md` #8).
 - [ ] Distributed jobs checkpoint **more** often than single-GPU — one preemption wastes N× compute; cadence per
-  `references/spot-resilience.md`.
+  `references/run-remote/spot-resilience.md`.
 
 For fanning a *sweep* across nodes (independent cells, not one job over many nodes), that is
-`references/parallel_ablation.md` + **REQUIRED** `superpowers:dispatching-parallel-agents`, not this file.
+`references/run-remote/parallel_ablation.md` + **REQUIRED** `superpowers:dispatching-parallel-agents`, not this file.

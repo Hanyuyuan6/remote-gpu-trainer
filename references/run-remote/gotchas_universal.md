@@ -7,7 +7,7 @@ value* in the fix — the rule stays here, the value lives in a profile. Platfor
 TB-pin, the wandb-key classifier, the network_turbo proxy literal) do NOT live here — see each profile's
 TOP GOTCHAS section.
 
-To jump: `grep -in '<keyword>' references/gotchas_universal.md` (e.g. `inode`, `egress`, `xid`, `crlf`,
+To jump: `grep -in '<keyword>' references/run-remote/gotchas_universal.md` (e.g. `inode`, `egress`, `xid`, `crlf`,
 `stdin`, `zombie`). Numbering `U1…` is stable; cross-platform additions continue the same series.
 
 ## Table of contents (by theme)
@@ -23,7 +23,7 @@ To jump: `grep -in '<keyword>' references/gotchas_universal.md` (e.g. `inode`, `
 - **Cost & teardown** — U32 task-epoch-default · U33 silent-checked-sync
 - **Secrets & trackers** — U34 secrets-via-stdin · U35 tracker-offline-without-key
 - **Delegated (cross-link only)** — U36 cuDNN-nondeterminism · U37 matplotlib-2^16 · U38 GPU-0%-util-data-bound
-- **Pointers** — spot/preemption → `references/spot-resilience.md`; multi-node/NCCL → `references/multinode.md`
+- **Pointers** — spot/preemption → `references/run-remote/spot-resilience.md`; multi-node/NCCL → `references/run-remote/multinode.md`
 
 ---
 
@@ -58,7 +58,7 @@ the filename for hot changes (`run_one_v2.sh`), point only *new* launches at it.
 file is safe (`while read < file` sees appended bytes); changing structure is not. To hot-swap, kill +
 restart the detach session so fresh bash reads from the top. Recovery: kill the session, copy the finished
 `best.pth` to durable storage, restart `run_queue.sh queue.txt <start_index>` to skip done items, delete any
-duplicate tracker run (cross-link verifying-dl-experiments **REQUIRED**).
+duplicate tracker run (cross-link references/verifying/methodology.md **REQUIRED**).
 
 **Related detach trap — a non-exported var doesn't cross into the detach primitive.** A `VAR=x` set in
 your shell before `tmux new-session` / `nohup` is **not** in the detached job's environment unless
@@ -131,7 +131,7 @@ errors. Any quota'd/cgroup disk on any rental does this.
 **Fix — prevent**: pre-budget `ckpt_size × N_runs + worst_case_latest + tracker_local_cache`; if it exceeds
 the mount, schedule mid-run aggregation to durable storage + delete completed-and-aggregated dirs; in
 `run_one.sh`, on success prune the rolling `latest.pth` and keep only `best.pth` (cross-link
-verifying-dl-experiments **REQUIRED** for the keepable-checkpoint policy). **Recover**: delete the
+references/verifying/methodology.md **REQUIRED** for the keepable-checkpoint policy). **Recover**: delete the
 `*.tmp`/`latest.pth` to free several GB — `best.pth` survives, the queue can resume.
 
 ### U7 — Storage fails on the dimension (and location) not being watched
@@ -147,7 +147,7 @@ disk) can outweigh everything the run created.
 **Fix**: monitor `df -i`, not just `df -h`, in Phase 0 and every space check. **Audit the real mount with
 `du`, not assumptions** (`du -sh ~/.cache/huggingface/hub/models--* | sort -rh`). Clean by **value** — keep
 the tiny irreplaceable evidence (metric/eval JSONs), drop the large reproducible scratch (periodic
-checkpoints, unused caches). Cap per-sample eval visualization (cross-link verifying-dl-experiments
+checkpoints, unused caches). Cap per-sample eval visualization (cross-link references/verifying/methodology.md
 **REQUIRED** for the sizing policy). The *inode-cap number* is a profile fact (some platforms enforce a hard
 ~200K cap; GB-quota'd platforms have none); the many-small-files general form is **shard into tar** (U25).
 Get explicit user confirmation naming `rm -rf` targets; offer "clean vs expand the disk" (principle #9).
@@ -195,7 +195,7 @@ host-RAM (U9).
 **Fix**: check free VRAM first (`nvidia-smi --query-gpu=memory.free --format=csv,noheader`); size the batch
 to fit *alongside* any concurrent job; set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to cut
 fragmentation. (Run heavy DL on the box; do static/shape checks locally — cross-link
-verifying-dl-experiments **REQUIRED** for local-OOM rationale.)
+references/verifying/methodology.md **REQUIRED** for local-OOM rationale.)
 
 ### U11 — A zombie holds VRAM `nvidia-smi` cannot see → OOM on an "empty" GPU
 
@@ -293,7 +293,7 @@ resume). Pairs with U25 (tar shards compress and transfer as one stream).
 > **Host-portability note:** `run_in_background`, `TaskStop`, `Monitor`, the ~600 s foreground cap, and
 > `/loop` / `/schedule` in this section are **Claude Code** harness primitives. On another Agent-Skills host
 > (Codex / Cursor / Gemini / Antigravity / …) map them to that agent's equivalents per
-> `references/monitoring_patterns.md` §7; the hang/exit physics (an unquoted `|` reading stdin, a
+> `references/run-remote/monitoring_patterns.md` §7; the hang/exit physics (an unquoted `|` reading stdin, a
 > never-*exiting* waiter) are pure shell and hold everywhere.
 
 ### U16 — Stale background waiters pile up; supersede a run → STOP its waiter; pick the right lifetime
@@ -327,7 +327,7 @@ notification. (Background tasks notify on EXIT only — no 600 s cap; foreground
 - **Quote every regex AND give grep a filename**: `grep -hE 'noise-sweep|snr=|wrote' log` (a `|` inside quotes is alternation; a filename means read the file, never stdin).
 - **Bound the ssh**: `ssh -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 …` — a blip self-kills in ~30 s instead of half-open hanging for minutes.
 - **Short-connection poll, not one long-held ssh**: each poll = ssh in → check → disconnect; loop locally with a bounded counter.
-- **Verify by artifact, not notification**: when it "looks done," Read the local output + a fresh `ssh 'grep DONE log; tmux ls; nvidia-smi'` to confirm ground truth (cross-link verifying-dl-experiments **REQUIRED**); don't wait on a notification that may never fire.
+- **Verify by artifact, not notification**: when it "looks done," Read the local output + a fresh `ssh 'grep DONE log; tmux ls; nvidia-smi'` to confirm ground truth (cross-link references/verifying/methodology.md **REQUIRED**); don't wait on a notification that may never fire.
 
 ### U18 — "I'll check periodically" is a lie unless a trigger is armed; two-leg remote self-completion
 
@@ -343,7 +343,7 @@ into a cloud agent (secret-leak).
 **Fix — the two-leg pattern**:
 - **Remote self-completion (guaranteed, survives session/SSH death)**: chain `train → eval → touch marker` under one `nohup ... </dev/null >log 2>&1 &`. Detect "done" by a **log marker** (`grep -q 'QUEUE DONE' master.log`), NEVER by `pgrep` — the waiter's own command line contains the pattern, so `pgrep -f` matches itself and loops forever (U17).
 - **Live progress (best-effort)**: a session-bound local loop (e.g. `/loop 30m` / cron `3,33 * * * *`) that ssh-polls with the *local* key. Be honest it dies when the session closes — the remote still finishes; the user re-pings to pull.
-- **Don't promise autonomous cross-session polling you can't deliver.** (`tmux` is often absent on a fresh box and `apt-get install` fails offline — `nohup ... </dev/null >log 2>&1 &` is zero-dependency and survives SSH drop; verify with `pgrep -af <script>`.) Full architecture → `references/monitoring_patterns.md`.
+- **Don't promise autonomous cross-session polling you can't deliver.** (`tmux` is often absent on a fresh box and `apt-get install` fails offline — `nohup ... </dev/null >log 2>&1 &` is zero-dependency and survives SSH drop; verify with `pgrep -af <script>`.) Full architecture → `references/run-remote/monitoring_patterns.md`.
 
 ### U19 — Tracker run deletion lags; a fresh export resurrects "deleted" runs
 
@@ -355,7 +355,7 @@ minutes.
 
 **Fix**: delete → re-verify on a **later** monitoring tick (not a tight loop; a second
 `delete(delete_artifacts=True)` pass is safe). Order matters: do cloud deletions **before** local exports,
-then re-check the export dir for resurrected files and remove them. (cross-link verifying-dl-experiments
+then re-check the export dir for resurrected files and remove them. (cross-link references/verifying/methodology.md
 **REQUIRED** for tracker forensics.)
 
 ### U20 — Local logs die with the instance: use a hosted tracker
@@ -442,7 +442,7 @@ knob set.)
 **Fix — tune in order**: `num_workers = cores − 1` (sized against per-worker footprint, U9),
 `persistent_workers=True`, `pin_memory=True`, `prefetch_factor=2`. Pathological cases show >100× gaps from
 these alone. If a heavy per-sample transform is the bottleneck, move it to the GPU (cross-link
-verifying-dl-experiments **REQUIRED** for the 0%-util diagnosis, U38). Pairs with U8 (stage to NVMe) and U25.
+references/verifying/methodology.md **REQUIRED** for the 0%-util diagnosis, U38). Pairs with U8 (stage to NVMe) and U25.
 
 ### U25 — Millions of small files on a network/object store → transaction-overhead death; shard into tar
 
@@ -594,7 +594,7 @@ a blanket CLI `--epochs` silently overrides that per-task default.
 
 **Fix**: make the queue support a per-line epoch field (e.g. recon/seg `20`, det `50`); audit the codebase's
 YAML for `epochs:` declarations before deploying (`grep -rE '^\s*epochs:' configs/ | sort -u`). This is a
-config-drift instance — really a smoke/sanity target (cross-link verifying-dl-experiments **REQUIRED**).
+config-drift instance — really a smoke/sanity target (cross-link references/verifying/methodology.md **REQUIRED**).
 
 ### U33 — Silent sync failure: gate the success line on the actual copy result
 
@@ -658,21 +658,21 @@ already finished without a tracker? Backfill from the train log (regex per-epoch
 ### U36 — cuDNN nondeterminism
 
 Same config + seed gives slightly different metrics run-to-run (`cudnn.benchmark=True` picks the fastest
-kernel by first-batch timing). Owned by **verifying-dl-experiments** (determinism). Cross-link
-verifying-dl-experiments **REQUIRED**; do not restate the fix here.
+kernel by first-batch timing). Owned by **references/verifying/methodology.md** (determinism). Cross-link
+references/verifying/methodology.md **REQUIRED**; do not restate the fix here.
 
 ### U37 — matplotlib `2^16`-per-axis limit on large eval visualization
 
 A composite grid (one row per sample) on a large test set crashes
 `Image size … must be less than 2^16`, often aborting the summary save. Owned by
-**verifying-dl-experiments** (eval-artifact sizing). Cross-link verifying-dl-experiments **REQUIRED**;
+**references/verifying/methodology.md** (eval-artifact sizing). Cross-link references/verifying/methodology.md **REQUIRED**;
 prevent with U25 (cap + shard, don't emit a file/row per sample).
 
 ### U38 — GPU at 0% util but training IS running (CPU-data-bound, not stalled)
 
 `nvidia-smi` reads ~0% util yet the step log advances and model memory is loaded — a heavy per-sample CPU
 transform with `num_workers=0` serializes data prep and starves the GPU. Owned by
-**verifying-dl-experiments** (0%-util diagnosis). Cross-link verifying-dl-experiments **REQUIRED**; the fix
+**references/verifying/methodology.md** (0%-util diagnosis). Cross-link references/verifying/methodology.md **REQUIRED**; the fix
 knobs are U24, the move-to-GPU remedy is in that skill.
 
 ### U39 — Live monitoring shows nothing (TensorBoard panel empty / `INACTIVE`) but training is fine
@@ -694,7 +694,7 @@ the panel's pinned dir, OR symlink the pinned dir at your output (`ln -sfn <your
 no retrain — the running writer keeps appending and the panel reloads it. The pinned path lives in the
 profile (AutoDL `/root/tf-logs`, **AD7**; elsewhere write under the durable mount). (2) **run TB + the
 watcher under the detach primitive** (tmux / nohup / the profile's `DETACH`), never foreground, so they
-survive the session and the ~600 s cap (`references/monitoring_patterns.md` §1; cross-host background →
+survive the session and the ~600 s cap (`references/run-remote/monitoring_patterns.md` §1; cross-host background →
 §7). (3) **expose the port the platform's way** — CN built-in tiles declare it at rent time (`china.md`),
 RunPod via its HTTP proxy (100 s Cloudflare cap, fine for a TB UI, `runpod.md`), Lambda / Paperspace /
 bare-SSH via an `ssh -L 6006:localhost:6006` tunnel (`generic-ssh.md`, `lambda.md`). Before blaming the
@@ -706,5 +706,5 @@ depend on a box-local panel at all → a hosted tracker (**U20**).
 
 ## Pointers — gotchas catalogued elsewhere
 
-- **Spot / preemption** (grace windows 2 min → ~0 s, Young/Daly cadence, atomic-write resume, managed-spot frameworks restart-your-process) → `references/spot-resilience.md`.
-- **Multi-node / NCCL** (fabric-manager hang, wrong NIC, NCCL timeout, jumbo-frame MTU mismatch, torchrun/Horovod elastic state restore) → `references/multinode.md`. Single-box users skip.
+- **Spot / preemption** (grace windows 2 min → ~0 s, Young/Daly cadence, atomic-write resume, managed-spot frameworks restart-your-process) → `references/run-remote/spot-resilience.md`.
+- **Multi-node / NCCL** (fabric-manager hang, wrong NIC, NCCL timeout, jumbo-frame MTU mismatch, torchrun/Horovod elastic state restore) → `references/run-remote/multinode.md`. Single-box users skip.

@@ -1,14 +1,16 @@
+> Applies to both local and remote runs.
+
 # Launching & debugging multi-GPU / multi-node training — torchrun · Accelerate · DeepSpeed · DDP · FSDP
 
 Pick a launcher, get the rank/world-size env right, choose a parallelism (DDP vs FSDP vs ZeRO),
 and — when 8 processes silently freeze — find *which* rank diverged. This layer owns *making the
-distributed job RUN, not hang, and not silently mis-shard*; **verifying-dl-experiments** owns *is the
+distributed job RUN, not hang, and not silently mis-shard*; **references/verifying/methodology.md** owns *is the
 resulting number correct* (a run whose LR silently rescaled with world size, or that resumed from
 step 0 after a restart, is its concern). Cross-link it (**REQUIRED**) wherever a launch fix changes
 effective batch size, LR, or precision.
 
 Single box, multiple GPUs is DDP/FSDP over NVLink/PCIe and lives here. The **inter-node** transport
-(NCCL NIC, fabric-manager, timeout, MTU, elastic restart) is `references/multinode.md` (**REQUIRED**
+(NCCL NIC, fabric-manager, timeout, MTU, elastic restart) is `references/run-remote/multinode.md` (**REQUIRED**
 for any job spanning ≥2 instances) — this file ends where the wire between boxes begins.
 
 To jump: `grep -in '<keyword>' references/training/distributed-launch.md` (e.g. `rdzv`, `local_rank`,
@@ -72,7 +74,7 @@ torchrun --nnodes=2 --nproc-per-node=8 \
          --rdzv-endpoint=$HEAD_IP:29400 train.py
 ```
 `c10d` is the recommended backend (no etcd dependency). `--nnodes=1:4` enables elastic scaling. The
-inter-node wire health (NIC pinning, fabric-manager, timeout) is `references/multinode.md`.
+inter-node wire health (NIC pinning, fabric-manager, timeout) is `references/run-remote/multinode.md`.
 
 ### D3 — Every process lands on GPU 0 (the `RANK` vs `LOCAL_RANK` bug)
 
@@ -101,7 +103,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc-per-node=2 --master-port=
 CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc-per-node=2 --master-port=29600 train.py &
 ```
 Or use `--rdzv-endpoint=localhost:0` to let torchrun pick a free port. Fanning cells across instances
-instead of one box → `references/parallel_ablation.md`.
+instead of one box → `references/run-remote/parallel_ablation.md`.
 
 ### D5 — HF Accelerate: `accelerate launch` reads a config, not torchrun flags
 
@@ -180,7 +182,7 @@ filter, or a `IterableDataset` can leave counts uneven — the short rank stops 
   — which mirrors the missing ranks' collectives so finished ranks don't deadlock
   ([Join tutorial](https://docs.pytorch.org/tutorials/advanced/generic_join.html)).
 - Always call `sampler.set_epoch(epoch)` each epoch, or every epoch sees the identical shuffle (a
-  silent correctness bug — **verifying-dl-experiments** **REQUIRED**).
+  silent correctness bug — **references/verifying/methodology.md** **REQUIRED**).
 
 ### D10 — BatchNorm stats diverge across ranks; buffers aren't synced
 
@@ -193,7 +195,7 @@ per-GPU batches each replica's BN stats are noisy and inconsistent.
 **Fix**: convert BN to synchronized BN before wrapping:
 `model = nn.SyncBatchNorm.convert_sync_batchnorm(model)` then `DDP(model, ...)`. Adds a collective per
 BN layer (cost), but BN stats become global. (Whether the metric *needs* SyncBN is a
-**verifying-dl-experiments** call.)
+**references/verifying/methodology.md** call.)
 
 ### D11 — N GPUs silently N× the effective batch (and the LR is now wrong)
 
@@ -207,7 +209,7 @@ silent multi-GPU regression.
 **Fix**: scale LR with effective batch (linear-scaling rule as a baseline, with warmup) and record
 `world_size`, per-GPU batch, and effective batch in the run manifest. **This changes the science** —
 declare it; comparing a 1-GPU baseline to an 8-GPU run with unscaled LR is not a clean datapoint
-(**verifying-dl-experiments** **REQUIRED**).
+(**references/verifying/methodology.md** **REQUIRED**).
 
 ---
 
@@ -244,7 +246,7 @@ only, keeps params resident — less comms, more memory.
 **Fix**: pick by the binding constraint — OOM → `FULL_SHARD`; comms-bound but it fits →
 `SHARD_GRAD_OP`. On a **multi-node** job where intra-node NVLink is fast but inter-node is slow,
 `HYBRID_SHARD` shards within a node and replicates across nodes (cuts inter-node traffic; pairs with
-`references/multinode.md` NIC tuning).
+`references/run-remote/multinode.md` NIC tuning).
 
 ### D14 — FSDP mixed precision: loss diverges or buffers stay fp32
 
@@ -260,7 +262,7 @@ weights and casts to bf16 for forward
 **Fix**: set all three deliberately — a safe default is `param_dtype=bf16, reduce_dtype=fp32` (keep
 reductions in fp32 for stability), and set `buffer_dtype` explicitly so buffers don't drift. Prefer
 **bf16 over fp16** for sharded training (no loss-scaler needed). The numerical-correctness check is
-**verifying-dl-experiments**; this entry only ensures the dtypes are *set*, not left implicit.
+**references/verifying/methodology.md**; this entry only ensures the dtypes are *set*, not left implicit.
 
 ### D15 — Checkpoint OOMs or saves an unloadable shard (state_dict type)
 
@@ -275,7 +277,7 @@ to **rank-0 CPU** (peaks host RAM, single-writer); `SHARDED_STATE_DICT` writes o
 **Fix**:
 - Large models / want resumable-at-scale: **`SHARDED_STATE_DICT`** via Distributed Checkpoint (DCP) — each rank saves its shard, reload reshards to any world size.
 - Need a single portable file (export/inference): `FULL_STATE_DICT` with `rank0_only=True, offload_to_cpu=True` so only rank 0 materializes it on CPU (avoids the all-ranks OOM). FSDP2 uses `broadcast_from_rank0=True` to load the full dict on rank 0 then shard out.
-- Atomic-write + load-latest-on-startup is the resume spine regardless of type → `references/spot-resilience.md` and `references/multinode.md` MN5 (a torchrun restart restores the *group*, never the *state*).
+- Atomic-write + load-latest-on-startup is the resume spine regardless of type → `references/run-remote/spot-resilience.md` and `references/run-remote/multinode.md` MN5 (a torchrun restart restores the *group*, never the *state*).
 
 ---
 
@@ -372,7 +374,7 @@ A distributed hang has **no traceback** — every rank sits in a collective wait
 never call it. The job to do is identify *which rank* diverged and *which collective* mismatched.
 (Distinct from a **single-process** vanish — for OOM/reboot/SSH-HUP/kill, see `gotchas_universal.md`
 U3; for the *inter-node* causes — fabric-manager, wrong NIC, MTU, the 1800 s NCCL timeout that *masks*
-the real failure — see `references/multinode.md` MN1-MN4.)
+the real failure — see `references/run-remote/multinode.md` MN1-MN4.)
 
 ### D19 — The desync-debug toolkit: turn a silent freeze into a named mismatch
 
@@ -384,7 +386,7 @@ the collective the others are blocked in.
 **Fix — set these and relaunch the hang**:
 - `export TORCH_DISTRIBUTED_DEBUG=DETAIL` + `export TORCH_CPP_LOG_LEVEL=INFO` → on mismatch PyTorch prints `Detected mismatch between collectives on ranks`, naming the op + sequence number per rank ([PyTorch forum](https://discuss.pytorch.org/t/torch-distributed-collectives-call-logging/172726)). (DETAIL itself does collectives — use to *diagnose*, remove for production; it can perturb timing.)
 - `export NCCL_DEBUG=INFO` (or `WARN`) → the node whose log **stops first** before others print their topology is the culprit.
-- `export TORCH_NCCL_ASYNC_ERROR_HANDLING=1` (older PyTorch: `NCCL_ASYNC_ERROR_HANDLING=1`) → a dead rank tears the group down *promptly* instead of every rank waiting out the 1800 s NCCL timeout (`references/multinode.md` MN3).
+- `export TORCH_NCCL_ASYNC_ERROR_HANDLING=1` (older PyTorch: `NCCL_ASYNC_ERROR_HANDLING=1`) → a dead rank tears the group down *promptly* instead of every rank waiting out the 1800 s NCCL timeout (`references/run-remote/multinode.md` MN3).
 - **Flight Recorder** (`TORCH_NCCL_TRACE_BUFFER_SIZE=2000`) dumps the last N collectives per rank with stack traces — read it to see which rank's queue is one collective behind.
 
 ### D20 — One rank diverged (NaN/OOM) and the survivors hang waiting for it
@@ -425,7 +427,7 @@ identically every epoch.
 
 **Fix**: identical `batch_size`/`drop_last`/sampler on all ranks; call `set_epoch` each epoch; for
 genuinely uneven data use **Join** (D9). The shuffle-staleness is a correctness bug —
-**verifying-dl-experiments** **REQUIRED**.
+**references/verifying/methodology.md** **REQUIRED**.
 
 ### D23 — `print` / `tqdm` / eval / `torch.save` interleaving looks like a hang (but isn't always)
 
@@ -438,7 +440,7 @@ to write the same checkpoint file (corrupting it). If the eval/save path contain
 
 **Fix**: gate pure side effects (logging, progress bar, file writes) to `if rank == 0:` — but keep any
 collective *outside* the gate (D21). Write checkpoints from rank 0 only, to a temp path, atomic-rename
-(`references/spot-resilience.md`), and `dist.barrier()` (on **all** ranks) before others read the file.
+(`references/run-remote/spot-resilience.md`), and `dist.barrier()` (on **all** ranks) before others read the file.
 A genuine hang vs noisy-but-progressing is told apart by the Flight Recorder / step counter (D19), not
 by the log soup.
 
@@ -446,8 +448,8 @@ by the log soup.
 
 ## Pointers — handled elsewhere, do not restate
 
-- **Inter-node wire** (NCCL NIC pinning, `nvidia-fabricmanager`, the 1800 s timeout masking a dead rank, jumbo-frame MTU, torchrun/Horovod elastic restart restoring the *group* not the *state*) → `references/multinode.md` (**REQUIRED** for ≥2 instances).
+- **Inter-node wire** (NCCL NIC pinning, `nvidia-fabricmanager`, the 1800 s timeout masking a dead rank, jumbo-frame MTU, torchrun/Horovod elastic restart restoring the *group* not the *state*) → `references/run-remote/multinode.md` (**REQUIRED** for ≥2 instances).
 - **Sharding *to fit a model that OOMs*** (the FSDP/ZeRO ladder in cost order, activation checkpointing, offload, LoRA/QLoRA, reading the OOM trace) → `references/training/oom-memory.md`.
-- **Restart-and-resume mechanics** (atomic write, load-latest, cadence, preemption signals) → `references/spot-resilience.md`; the spine is `references/principles.md` #8.
-- **Single-process vanish** (OOM vs reboot vs SSH-HUP vs manual kill) → `references/gotchas_universal.md` U3; **cgroup host-RAM OOM from `num_workers`** → U9; **zombie VRAM after a crashed DDP run** → U11.
-- **Is the resulting number real** (LR-rescaled run, restarted-from-0 run, shuffle staleness, SyncBN necessity, precision change) → **verifying-dl-experiments** (**REQUIRED** at every "this fix changes the science" note above).
+- **Restart-and-resume mechanics** (atomic write, load-latest, cadence, preemption signals) → `references/run-remote/spot-resilience.md`; the spine is `references/run-remote/principles.md` #8.
+- **Single-process vanish** (OOM vs reboot vs SSH-HUP vs manual kill) → `references/run-remote/gotchas_universal.md` U3; **cgroup host-RAM OOM from `num_workers`** → U9; **zombie VRAM after a crashed DDP run** → U11.
+- **Is the resulting number real** (LR-rescaled run, restarted-from-0 run, shuffle staleness, SyncBN necessity, precision change) → **references/verifying/methodology.md** (**REQUIRED** at every "this fix changes the science" note above).

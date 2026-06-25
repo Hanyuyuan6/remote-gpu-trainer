@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# repro.sh -- one-button, from-clean-clone reproduction of the paper's numbers and figures.
+#
+# This is the executable form of delivering principle P5 (references/delivering/principles.md): a clean `git clone`
+# plus this script must regenerate every reported metric, table, and figure deterministically
+# from the immutable evidence layer -- no hand-typed numbers, no manual steps. It is the ultimate
+# guard against stale results (references/verifying/methodology.md section 14): the presentation layer is a pure function of
+# pinned env + pinned checkpoints, re-derived end to end, then cross-checked by reconcile.py.
+#
+# Pipeline:  pinned env  ->  eval pinned checkpoints  ->  regenerate metrics  ->  tables
+#            ->  figures  ->  reconcile (fail if any reported number drifts from EVIDENCE.json)
+#
+# This is a TEMPLATE. Each `# FILL:` marks a project-specific command you must supply. Copy it to
+# your project root as `repro.sh`, fill the markers, and commit it next to EVIDENCE.json.
+#
+# Usage:   ./repro.sh
+# Exit:    0 = every step succeeded AND reconcile found no drift; non-zero = a step failed or
+#          a reported value diverged from its authoritative source (see the failing step's log).
+
+# -e: stop at the first failing command so a broken step never silently feeds the next.
+# -u: an unset variable is an error (catches a forgotten FILL). -o pipefail: a failure anywhere
+# in a pipe fails the pipe (so `... | tee log` reports the real exit status, not tee's).
+set -euo pipefail
+
+# Resolve to the directory this script lives in, so it works from any cwd (clean-clone friendly).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
+
+EVIDENCE="${EVIDENCE:-$REPO_ROOT/EVIDENCE.json}"   # project single source of truth
+RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results}"   # results/<exp-id>/runs/<run-id>/...
+FIGURES_DIR="${FIGURES_DIR:-$REPO_ROOT/figures}"   # figures/<name>/ (script.py + source_data.csv + output)
+
+echo "=== repro.sh: reproducing from $REPO_ROOT ==="
+
+# ---------------------------------------------------------------------------------------------
+# Step 1 -- Load the PINNED environment.
+# Reproducibility starts with an exact env: same Python, same framework + CUDA, same pinned deps.
+# Do NOT `pip install` loose ranges here -- install from a lockfile so the env is bit-identical.
+# ---------------------------------------------------------------------------------------------
+echo "[1/6] Loading pinned environment ..."
+# FILL: activate the project's pinned env. Examples (pick one, delete the rest):
+#   conda env create -f environment.lock.yml -n repro 2>/dev/null || true; conda activate repro
+#   source .venv/bin/activate && pip install --require-hashes -r requirements.lock.txt
+#   micromamba activate "$REPO_ROOT/.env"
+: # <- remove this no-op once filled
+
+# Record what we actually ran in (provenance: the env half of the content-address hash).
+python -c "import sys,platform;print('python', sys.version.split()[0], platform.platform())"
+# FILL (optional): echo framework + CUDA versions, e.g.
+#   python -c "import torch;print('torch',torch.__version__,'cuda',torch.version.cuda)"
+
+# ---------------------------------------------------------------------------------------------
+# Step 2 -- Evaluate the PINNED checkpoints.
+# Re-run inference on the exact `best` checkpoints recorded under results/<exp-id>/runs/<run-id>/
+# (the selected run, chosen by val only). Pin checkpoints by content hash, not by "latest on disk"
+# -- a re-trained or overwritten ckpt silently changes the numbers (principle P3 / references/verifying/methodology.md section 3).
+# ---------------------------------------------------------------------------------------------
+echo "[2/6] Evaluating pinned checkpoints ..."
+# FILL: for each exp-id you report, evaluate its selected checkpoint on val/test and write the
+#       per-metric results.json (with split + n + variance) back into the run dir. Example:
+#   for exp in "$RESULTS_DIR"/*/ ; do
+#       ckpt="$exp/selected/checkpoints/best"            # 'selected' -> the chosen run (spec 5.2)
+#       python -m src.eval --ckpt "$ckpt" --split test \
+#           --out "$exp/selected/results.json"
+#   done
+: # <- remove once filled
+
+# ---------------------------------------------------------------------------------------------
+# Step 3 -- Regenerate METRICS into the evidence layer (EVIDENCE.json authoritative scalars).
+# Aggregate the per-run results.json into the project-level authoritative values that every doc
+# cites. This is the ONLY place a reported number is "set"; prose/tables/figures read from here.
+# ---------------------------------------------------------------------------------------------
+echo "[3/6] Regenerating authoritative metrics into evidence layer ..."
+# FILL: aggregate results.json across runs and update the authoritative `value` of each claim in
+#       EVIDENCE.json (means + variance over seeds, correct split). Example:
+#   python scripts/aggregate_metrics.py --results "$RESULTS_DIR" --evidence "$EVIDENCE"
+: # <- remove once filled
+
+# ---------------------------------------------------------------------------------------------
+# Step 4 -- Regenerate TABLES from the evidence layer (zero hand-typed numbers; P1/P2).
+# Emit LaTeX/Markdown tables (or \input macros) straight from EVIDENCE.json / results.json so a
+# table can never go stale relative to the numbers it shows.
+# ---------------------------------------------------------------------------------------------
+echo "[4/6] Regenerating tables from evidence ..."
+# FILL: render every results table from the evidence layer. Example:
+#   python scripts/make_tables.py --evidence "$EVIDENCE" --out paper/tables/
+: # <- remove once filled
+
+# ---------------------------------------------------------------------------------------------
+# Step 5 -- Regenerate FIGURES from their co-located scripts (figures/<name>/script.py; P7).
+# Each figure folder owns its script.py + source_data.csv; rebuild the chain
+# results.json -> source_data.csv -> figure, and write a .provenance beside each output.
+# (After this completes, re-open each output PNG and eyeball the pixels -- the pixel gate, vde
+#  section 10 -- a clean exit does not prove the figure rendered correctly.)
+# ---------------------------------------------------------------------------------------------
+echo "[5/6] Regenerating figures from co-located scripts ..."
+# FILL: rebuild each figure from its own folder. Example:
+#   for figdir in "$FIGURES_DIR"/*/ ; do
+#       [ -f "$figdir/script.py" ] && (cd "$figdir" && python script.py)
+#   done
+: # <- remove once filled
+
+# ---------------------------------------------------------------------------------------------
+# Step 6 -- RECONCILE: fail the build if any reported number drifts from EVIDENCE.json.
+# The delivery gate (P8): cross-check every presentation-layer doc against the authoritative
+# values. A non-zero exit here means a paper/thesis/slide/README/CSV disagrees with the evidence
+# layer -- the repro is NOT reproducible until that drift is fixed at the source.
+# ---------------------------------------------------------------------------------------------
+echo "[6/6] Reconciling reported numbers against the evidence layer ..."
+# FILL: list every presentation-layer doc that quotes a number. Keep this list complete -- an
+#       unlisted doc is an unchecked doc.
+DOCS=(
+    # paper/main.md
+    # thesis/results.md
+    # slides/defense.md
+    # README.md
+    # results.csv
+)
+if [ "${#DOCS[@]}" -eq 0 ]; then
+    echo "  !! repro.sh: DOCS is empty -- fill the doc list in Step 6 so reconcile actually checks something." >&2
+    exit 2
+fi
+python "$REPO_ROOT/scripts/reconcile.py" --evidence "$EVIDENCE" --docs "${DOCS[@]}"
+
+echo "=== repro.sh: done -- metrics, tables, figures regenerated and reconciled clean. ==="

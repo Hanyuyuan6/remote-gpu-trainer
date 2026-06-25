@@ -26,7 +26,7 @@ GPU; `df -i /root/autodl-fs` is well under 100% (the inode cap, U7).
 
 ### Phase 1 — SSH + credentials
 ```bash
-# alias already in ~/.ssh/config (references/ssh_transport.md). Push the wandb key via stdin,
+# alias already in ~/.ssh/config (references/run-remote/ssh_transport.md). Push the wandb key via stdin,
 # to the per-instance disk — NEVER the shared FS (U34, and AutoDL's classifier blocks it, AD-gotcha):
 printf '%s\n' "$WANDB_KEY_FROM_ENV" | ssh autodl-1 'umask 077; cat > /root/.wandb_key && chmod 600 /root/.wandb_key'
 ```
@@ -39,7 +39,7 @@ cp scripts/run_one.sh.template run_one.sh && cp scripts/run_queue.sh.template ru
 python -m src.train -c configs/ablation/baseline.yaml --task reconstruction \
        --limit-batches 2 --epochs 1   # logger off; catches import/shape/scale bugs for free
 ```
-**Verify:** the smoke exits 0 on 2 batches. (Smoke *content* → **REQUIRED:** `verifying-dl-experiments`.)
+**Verify:** the smoke exits 0 on 2 batches. (Smoke *content* → **REQUIRED:** `references/verifying/methodology.md`.)
 
 ### Phase 3 — Detached launch
 ```bash
@@ -55,7 +55,7 @@ the session alive and a `STARTING baseline` line. Never overwrite the FS wrapper
 ```bash
 ssh autodl-1 'grep -hE "STARTING|FINISHED|QUEUE DONE|ERROR|Traceback" /root/autodl-tmp/runs/logs/q1_master.log | tail -8'
 ```
-For a multi-hour sweep deploy the four-layer architecture (`references/monitoring_patterns.md`): a remote
+For a multi-hour sweep deploy the four-layer architecture (`references/run-remote/monitoring_patterns.md`): a remote
 self-completion marker + a session patrol loop. Flag a FINISHED at <50% typical duration (probable
 early-stop) and re-launch the **identical** config (principle #7), never a patched one. Don't blind-retry.
 
@@ -69,4 +69,4 @@ python scripts/verify_local.py /path/to/local/final_ckpts/                     #
 **Verify:** `verify_local.py` reports 100% OK. **Iron Law:** only AFTER every cell is pulled AND
 load-verified AND the user approves does teardown run — on AutoDL `关机` stops the meter and keeps the
 disk (the reversible exception); `release` frees it irreversibly. Reconcile against the roster, not the
-log (`references/parallel_ablation.md` §6). **REQUIRED:** `superpowers:verification-before-completion`.
+log (`references/run-remote/parallel_ablation.md` §6). **REQUIRED:** `superpowers:verification-before-completion`.

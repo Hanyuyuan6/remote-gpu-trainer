@@ -7,12 +7,12 @@
 # Mandatory: run the network-acceleration hook before any external call (wandb / HF / pip / git).
 # On AutoDL that is `source /etc/network_turbo`; on a clean box set PROXY_HOOK=":" (a no-op).
 # Without the right hook, wandb.init can hang and a flaky link can drop already-uploaded cloud
-# runs — see references/gotchas_universal.md and references/china-network.md.
+# runs — see references/run-remote/gotchas_universal.md and references/run-remote/china-network.md.
 #
 # Usage: ./run_one.sh <config_yaml> <task> [epochs]
 #
 # Disclose every CLI override applied below in any paper's Implementation Details — reproducibility
-# depends on the list being complete (the yaml/source stay untouched). See references/gotchas_universal.md.
+# depends on the list being complete (the yaml/source stay untouched). See references/run-remote/gotchas_universal.md.
 set -u
 
 # Arg-count guard FIRST — under `set -u`, CFG="$1" below would abort with an unbound-variable
@@ -87,7 +87,7 @@ if [ "$EXIT" -eq 0 ] && [ -f "$CKPT_DIR/best.pth" ]; then
 fi
 
 # Auto-sync to durable storage. GATE the success line on the actual copy result — an unconditional
-# "synced" echo lies when the durable FS is full / inode-exhausted (references/gotchas_universal.md,
+# "synced" echo lies when the durable FS is full / inode-exhausted (references/run-remote/gotchas_universal.md,
 # silent-sync). Verify best.pth landed before claiming success (principle #3). Skip if DURABLE_DIR="".
 if [ "$EXIT" -eq 0 ] && [ -f "$CKPT_DIR/best.pth" ] && [ -n "$DURABLE_DIR" ]; then
     FS_DIR="$DURABLE_DIR/final_ckpts/$NAME"

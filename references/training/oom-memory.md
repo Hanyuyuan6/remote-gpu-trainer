@@ -1,8 +1,10 @@
+> Applies to both local and remote runs.
+
 # OOM & fitting a model that doesn't — VRAM + host-RAM out-of-memory during training
 
 How to read a CUDA OOM trace, understand *what* fills the card (params vs optimizer vs gradients vs
 activations vs fragmentation), and apply the fixes **in cost order** — from a free batch-size cut to
-ZeRO-3/QLoRA sharding. This layer owns *making training RUN and fit*; **verifying-dl-experiments** owns
+ZeRO-3/QLoRA sharding. This layer owns *making training RUN and fit*; **references/verifying/methodology.md** owns
 *is the resulting number correct*. Cross-link it (**REQUIRED**) wherever a "fix" risks changing the
 science (shrinking the one variable under test, swapping precision, changing seq-len).
 
@@ -92,7 +94,7 @@ Each rung costs more (speed, complexity, or risk to the result). Climb only as f
 10. **LoRA / QLoRA** (M13) — for *finetuning*: freeze base, train adapters; QLoRA quantizes base to 4-bit.
 
 Rungs 1–4 and 7 do **not** alter the model/optimization math; rung 6 does (declare it, re-verify per
-verifying-dl-experiments). Rungs 8–10 change *where* state lives, not the math (LoRA changes capacity).
+references/verifying/methodology.md). Rungs 8–10 change *where* state lives, not the math (LoRA changes capacity).
 
 ### M5 — Reduce micro-batch + gradient accumulation (the free first move)
 
@@ -104,7 +106,7 @@ sub-batches before one optimizer step — same math, lower peak activation memor
 as fits (batch 4 × accum 16 beats batch 1 × accum 64 — better GPU utilization).
 Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (gradient accumulation).
 Caveat: with token-level loss + a custom loop, naive accumulation can mis-weight the loss across uneven
-sub-batch token counts — a correctness issue owned by **verifying-dl-experiments** (REQUIRED).
+sub-batch token counts — a correctness issue owned by **references/verifying/methodology.md** (REQUIRED).
 
 ### M6 — bf16 mixed precision (prefer bf16 over fp16 on Ampere+)
 
@@ -115,7 +117,7 @@ win is **activations stored in 16-bit**. **bf16 over fp16**: bf16 has fp32's exp
 loss-scaling and won't overflow/underflow — fewer NaN failures. Note fp16 can *increase* memory at small
 batch (it keeps both fp16 and fp32 weight copies); bf16 is the safer default where supported.
 Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (mixed precision; bf16 needs
-Ampere+). NaN/divergence after switching precision = a numerics question → **verifying-dl-experiments**.
+Ampere+). NaN/divergence after switching precision = a numerics question → **references/verifying/methodology.md**.
 
 ### M7 — Activation / gradient checkpointing (trade compute for activation memory)
 
@@ -156,7 +158,7 @@ drop it.
   high-bandwidth interconnect (NVLink/NVSwitch) because params are all-gathered per layer.
 Source: DeepSpeed ZeRO tutorial (https://www.deepspeed.ai/tutorials/zero/) and HF DeepSpeed integration
 (https://huggingface.co/docs/transformers/en/deepspeed); FSDP's `ShardingStrategy` maps 1:1 to these stages.
-Multi-GPU launch + NCCL fabric gotchas (wrong NIC, timeout, MTU) → **references/multinode.md**.
+Multi-GPU launch + NCCL fabric gotchas (wrong NIC, timeout, MTU) → **references/run-remote/multinode.md**.
 
 ### M10 — CPU / NVMe offload (single-GPU last resort)
 
@@ -180,7 +182,7 @@ with seq-len/resolution.
   `attn_implementation="sdpa"` (default in PyTorch 2.1.1+) or `"flash_attention_2"`. No accuracy change.
 - Only then **shorten seq-len / lower image resolution / patchify** — this **changes the task/science**;
   declare it and re-verify (the resolution-change-broke-training failure mode is owned by
-  **verifying-dl-experiments**, REQUIRED).
+  **references/verifying/methodology.md**, REQUIRED).
 Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (SDPA, attention backends) and
 model-memory-anatomy (attention score matrix grows with seq²).
 
@@ -194,7 +196,7 @@ model-memory-anatomy (attention score matrix grows with seq²).
 convergence**). **Paged** variants additionally page optimizer state to CPU on spikes to survive transient
 peaks. Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (optimizers) and
 model-memory-anatomy ("quantized Adam → 2 bytes/param"). Adafactor's convergence change is a science
-question → **verifying-dl-experiments** (REQUIRED) before trusting its ablation deltas.
+question → **references/verifying/methodology.md** (REQUIRED) before trusting its ablation deltas.
 
 ### M13 — LoRA / QLoRA (finetuning only: don't train the full model)
 
@@ -207,7 +209,7 @@ optimizers), train fp16/bf16 adapters on top — reported to finetune a **65B mo
 with no accuracy degradation vs 16-bit. Source: QLoRA paper
 (https://arxiv.org/abs/2305.14314) and repo (https://github.com/artidoro/qlora). Note: LoRA *changes model
 capacity* — it is a different optimization target, not a free OOM trick. Whether the LoRA result matches
-full-finetune is a science claim → **verifying-dl-experiments** (REQUIRED).
+full-finetune is a science claim → **references/verifying/methodology.md** (REQUIRED).
 
 ---
 
@@ -240,7 +242,7 @@ sometimes even at eval batch size 1.
 **`eval_accumulation_steps=N`** so predictions move to CPU every N steps instead of piling on the GPU
 (https://huggingface.co/docs/transformers/main_classes/trainer). In a custom loop: wrap eval in
 `torch.no_grad()` / `torch.inference_mode()`, and `.cpu()` / `.detach()` outputs before appending to any
-list. Eval-artifact *sizing* (per-sample dumps blowing up) is owned by **verifying-dl-experiments**.
+list. Eval-artifact *sizing* (per-sample dumps blowing up) is owned by **references/verifying/methodology.md**.
 
 ### M16 — OOM mid-epoch on the **longest batch** (variable-length / bucketed data)
 
@@ -301,7 +303,7 @@ or `python torch/cuda/_memory_viz.py trace_plot oom_snapshot.pickle -o snapshot.
 **parameters / gradients / optimizer state / activations / temporaries** separately, so the tallest band at
 the OOM moment names the bucket to attack (→ map back to M5–M13). Available PyTorch **2.1+**. Source:
 https://pytorch.org/blog/understanding-gpu-memory-1/. On a remote box: dump the pickle, `scp` it down
-(references/ssh_transport.md), view locally — don't try to run the visualizer over ssh.
+(references/run-remote/ssh_transport.md), view locally — don't try to run the visualizer over ssh.
 
 ### M20 — `empty_cache()` and the "memory leak" myths
 
@@ -322,7 +324,7 @@ reserved memory is a leak.
 - Calling `empty_cache()` every step to "stay safe" just slows training and can *increase* fragmentation.
 
 Real OOM-mechanics leaks (accumulate-loss-tensor, no `detach`) belong here; whether a *metric* drift is a
-real effect vs a bug belongs to **verifying-dl-experiments** (REQUIRED).
+real effect vs a bug belongs to **references/verifying/methodology.md** (REQUIRED).
 
 ---
 
@@ -332,7 +334,7 @@ real effect vs a bug belongs to **verifying-dl-experiments** (REQUIRED).
 - **VRAM-OOM vs cgroup-OOM**, concurrent-job sizing, the `expandable_segments` one-liner → **gotchas_universal.md U10**.
 - **Zombie holds VRAM nvidia-smi can't see** (OOM on an "empty" GPU) → **gotchas_universal.md U11**.
 - **Disk-full crashes `torch.save`** (not memory, but the other "out of space") → **gotchas_universal.md U6**.
-- **Multi-GPU NCCL / fabric** for FSDP/ZeRO launches → **references/multinode.md**.
+- **Multi-GPU NCCL / fabric** for FSDP/ZeRO launches → **references/run-remote/multinode.md**.
 - **Is the post-fit number correct** (precision swap, seq-len change, LoRA-vs-full, accumulation loss
-  weighting, determinism) → **verifying-dl-experiments** (REQUIRED — this layer makes it *fit and run*; that
+  weighting, determinism) → **references/verifying/methodology.md** (REQUIRED — this layer makes it *fit and run*; that
   one decides if the *result is true*).

@@ -1,3 +1,5 @@
+> Applies to both local and remote runs.
+
 # Convergence & optimization debugging — it runs, doesn't crash, but won't learn (or learns badly)
 
 The other training layers cover the run that **crashes** (`oom-memory.md`), **NaNs**
@@ -8,7 +10,7 @@ hardware. Each entry is **Symptom → Root cause → Fix** with the exact knob. 
 (overfit one batch)** — it separates "the loop is broken" from "the model/data is weak" in five minutes
 and tells you which half of this file you need.
 
-Boundary: **verifying-dl-experiments** (**REQUIRED** at every "is the result real" fork) owns collapse,
+Boundary: **references/verifying/methodology.md** (**REQUIRED** at every "is the result real" fork) owns collapse,
 leakage, metric validity, train-vs-val generalization, and seed interpretation; this file owns the
 *mechanism* of why a correct-looking loop doesn't converge. NaN / loss-spike / LR-too-**HIGH** live next
 door in `precision-stability.md` (P8–P18) — this file is the LR-too-**LOW** / won't-move / mis-wired side.
@@ -24,7 +26,7 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 - **Loss-function footguns** — O12 double-softmax · O13 BCEWithLogits · O14 CE-target-form · O15 padded-loss-reduction · O16 NLLLoss-needs-log_softmax
 - **Fine-tuning / transfer** — O17 frozen-but-still-in-optimizer · O18 frozen-BN-running-stats · O19 discriminative-LR/forgetting · O20 strict=False-shape-mismatch · O21 LoRA/PEFT-wiring
 - **Training-dynamics dashboard (instrument it)** — O22 update:weight-ratio · O23 actual-LR · O24 GradScaler-scale · O25 dead-ReLU-fraction · O26 weight/grad/act-histograms
-- **Pointers** — precision-stability.md, distributed-launch.md, verifying-dl-experiments (skill)
+- **Pointers** — precision-stability.md, distributed-launch.md, references/verifying/methodology.md (skill)
 
 ---
 
@@ -33,7 +35,7 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 ### O1 — Run the overfit-one-batch smoke BEFORE tuning anything (the canonical correctness test)
 **Symptom**: training "runs" (no error, normal throughput) but loss plateaus near its init value or wanders without trending down, across LRs/optimizers/architectures. You're tuning hyperparameters blind because nothing proves the loop can learn at all.
 **Root cause**: the loop is broken somewhere between forward and weight-update (any of O2–O5, or a label/shape bug) and no single test isolates "can this code memorize?" from "is this a modeling/data problem?".
-**Fix**: take ONE fixed mini-batch (2 examples is enough) and loop forward/backward/step on **that same batch** for hundreds of iters — a correct loop drives train loss → ~0. Turn **off** augmentation, shuffling, dropout, and weight decay for the test. Also "verify the loss at init" (e.g. softmax CE should start near `-log(1/n_classes)` then fall). If it will not reach ~0, *"there is a bug somewhere and we cannot continue"* — debug the loop (O2–O5) before touching hyperparameters. (Smoke *content/interpretation* → **verifying-dl-experiments**; this is the mechanical gate.) ([Karpathy, "A Recipe for Training Neural Networks"](https://karpathy.github.io/2019/04/25/recipe/))
+**Fix**: take ONE fixed mini-batch (2 examples is enough) and loop forward/backward/step on **that same batch** for hundreds of iters — a correct loop drives train loss → ~0. Turn **off** augmentation, shuffling, dropout, and weight decay for the test. Also "verify the loss at init" (e.g. softmax CE should start near `-log(1/n_classes)` then fall). If it will not reach ~0, *"there is a bug somewhere and we cannot continue"* — debug the loop (O2–O5) before touching hyperparameters. (Smoke *content/interpretation* → **references/verifying/methodology.md**; this is the mechanical gate.) ([Karpathy, "A Recipe for Training Neural Networks"](https://karpathy.github.io/2019/04/25/recipe/))
 
 ### O2 — Loss flat from step 0, weights byte-identical after `step()` → params aren't in the optimizer
 **Symptom**: overfit-one-batch fails; a snapshotted param is unchanged before/after `optimizer.step()`; grad-norm may even be nonzero. No error.
@@ -169,7 +171,7 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 ### O25 — Rising dead-ReLU / zero-activation fraction → a slice of the net is permanently off
 **Symptom**: capacity quietly vanishes — a layer's outputs are increasingly all-zero, loss plateaus above where it should, and adding width doesn't help. No crash; it just under-fits. Worst case the net degenerates toward a constant function.
 **Root cause**: a ReLU whose pre-activation is driven negative for ~all inputs outputs 0 and has **zero** local gradient there, so backprop sends no signal to its incoming weights — the unit is stuck off and unrecoverable. Triggered by too-high LR (a big update pushes weights/bias deep negative) or a large negative bias. Once a large fraction of a layer dies, gradients can't flow through it and that capacity is gone. The same shape (saturation → ~0 gradient → frozen region) applies to sigmoid/tanh tails.
-**Fix**: instrument the zero/saturation fraction per activation with a forward hook — `(out==0).float().mean()` for ReLU (or `|out|>0.99` for tanh/sigmoid), logged every K steps per layer. Healthy: a stable modest dead fraction (ReLU is sparse by design). Bad: a fraction climbing over training or a layer pinned near ~100% dead. Levers, in order: (1) lower LR (the primary cause); (2) ReLU → LeakyReLU / GELU / SiLU so the negative region keeps a gradient; (3) fix init / large negative biases. ([CS231n "Neural Networks 1" — dying ReLU](https://cs231n.github.io/neural-networks-1/)) (the *output* being constant is owned by verifying-dl-experiments; this is the internal mechanism.)
+**Fix**: instrument the zero/saturation fraction per activation with a forward hook — `(out==0).float().mean()` for ReLU (or `|out|>0.99` for tanh/sigmoid), logged every K steps per layer. Healthy: a stable modest dead fraction (ReLU is sparse by design). Bad: a fraction climbing over training or a layer pinned near ~100% dead. Levers, in order: (1) lower LR (the primary cause); (2) ReLU → LeakyReLU / GELU / SiLU so the negative region keeps a gradient; (3) fix init / large negative biases. ([CS231n "Neural Networks 1" — dying ReLU](https://cs231n.github.io/neural-networks-1/)) (the *output* being constant is owned by references/verifying/methodology.md; this is the internal mechanism.)
 
 ### O26 — No weight/grad/activation histograms → scalar norms hide bimodal/saturating/collapsing distributions
 **Symptom**: scalar dashboards (loss, one grad-norm) look fine yet the model under-performs or destabilizes — a mean/norm hides the shape: activations drifting to a saturated tail, weights collapsing to a spike at 0 (a layer dying, O25), or a gradient distribution growing fat outlier tails all read as an unremarkable scalar.
@@ -184,4 +186,4 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 - **OOM from the optimizer step / activation checkpointing / LoRA-QLoRA memory** → `references/training/oom-memory.md` (M5, M12–M13).
 - **N-GPU effective batch × LR, DeepSpeed accum double-count, find_unused_parameters** → `references/training/distributed-launch.md` (D11, D18, D8).
 - **Dataloader correctness (worker RNG, collate, labels, shuffle) that mimics "won't learn"** → `references/training/data-pipeline.md`.
-- **Is the converged number REAL** (collapse, leakage, train-vs-val, metric validity, seed discipline) → **verifying-dl-experiments** (**REQUIRED** — every "is the result real" fork above).
+- **Is the converged number REAL** (collapse, leakage, train-vs-val, metric validity, seed discipline) → **references/verifying/methodology.md** (**REQUIRED** — every "is the result real" fork above).

@@ -1,15 +1,17 @@
-﻿# Throughput & profiling — make training FAST, find the one bottleneck
+﻿> Applies to both local and remote runs.
+
+# Throughput & profiling — make training FAST, find the one bottleneck
 
 How to tell *why* a rented GPU is underfed (GPU-bound vs data-bound vs comms-bound), then apply the
 right speedup in cost order — from a free dataloader knob to `torch.compile` and fused attention. This
-layer owns *making it RUN fast + locating the mechanical bottleneck*; **verifying-dl-experiments** owns
+layer owns *making it RUN fast + locating the mechanical bottleneck*; **references/verifying/methodology.md** owns
 *is the resulting number correct*. Cross-link it (**REQUIRED**) wherever a speedup risks changing the
 science (a kernel that alters numerics, a precision swap, dropping samples to "go faster").
 
 > **Size the run to the box — then PIN it for any comparison.** Auto-sizing batch/`num_workers` to the
 > measured GPU/VRAM/vCPU (Phase 0) to use the card well is fine for a STANDALONE job; but for an ablation
 > or baseline-vs-variant comparison, **pin the same batch across all cells** — auto-maximizing per-box
-> silently changes a variable and breaks comparability (**verifying-dl-experiments**, REQUIRED).
+> silently changes a variable and breaks comparability (**references/verifying/methodology.md**, REQUIRED).
 
 To jump: `grep -in '<keyword>' references/training/throughput-profiling.md` (e.g. `bound`, `workers`,
 `compile`, `recompile`, `flash`, `sdpa`, `nsys`, `py-spy`, `channels_last`, `tf32`, `overlap`).
@@ -24,7 +26,7 @@ To jump: `grep -in '<keyword>' references/training/throughput-profiling.md` (e.g
 - **Memory↔speed trades** — T17 activation checkpointing speed cost · T18 batch size vs throughput
 - **Profilers** — T19 torch.profiler (is-it-data-bound) · T20 nsys / Nsight Systems · T21 py-spy (live, no restart) · T22 memory-snapshot pointer
 - **Multi-GPU / multi-node comms** — T23 DDP/FSDP compute-comm overlap
-- **Pointers** — gotchas_universal.md U8/U21/U24/U25/U38 · oom-memory.md · distributed-launch.md · multinode.md · verifying-dl-experiments (skill)
+- **Pointers** — gotchas_universal.md U8/U21/U24/U25/U38 · oom-memory.md · distributed-launch.md · multinode.md · references/verifying/methodology.md (skill)
 
 ---
 
@@ -54,7 +56,7 @@ The highest-signal instrument is a **profiler trace** (T19) — read it before c
 A 100%-util tile can hide a starved GPU (a trickle of tiny kernels reads as 100%). The full diagnosis —
 correlate `clocks.current.sm` + mem-bandwidth util + power via `nvidia-smi dmon -s pucvmet -d 1`, and the
 thermal/power-throttle slowdown — lives in **gotchas_universal.md U21/U23**; read it before concluding a run
-is GPU-bound. The *0%-util-but-running* (CPU-data-bound) inverse is **U38**, owned by verifying-dl-experiments.
+is GPU-bound. The *0%-util-but-running* (CPU-data-bound) inverse is **U38**, owned by references/verifying/methodology.md.
 
 ### T3 — Cheap triage when no profiler is wired yet: is the host CPU busy?
 
@@ -144,7 +146,7 @@ the GPU's consume rate, no depth helps — fix the rate (workers T4, GPU transfo
 - **CPU-transform-bound**: a heavy per-sample augment (resize/decode/FFT) saturates CPU; workers CPU-pegged
   (T3), capping at core count. Move the transform to the **GPU** (NVIDIA DALI, `torchvision.transforms.v2`
   on tensors, kornia) onto idle GPU cycles. The *0%-util* serialized-transform variant is **U38**, owned by
-  verifying-dl-experiments **REQUIRED** (which also owns whether a GPU-side transform shifted the data
+  references/verifying/methodology.md **REQUIRED** (which also owns whether a GPU-side transform shifted the data
   distribution).
 
 **Fix**: read the trace (T19) — time in `read`/`stat` ⇒ U8/U25; time in a transform fn ⇒ move to GPU.
@@ -173,7 +175,7 @@ first batch of each new shape and caches the fastest
 stable** — with variable shapes (dynamic resolution, ragged batches) it re-benchmarks every new shape and
 *loses* time. Trade-off: it is **nondeterministic** (picks by first-batch timing), so it fights the
 determinism knobs — whether to enable it for a clean datapoint is owned by precision-stability P19 /
-verifying-dl-experiments (U36, **REQUIRED**).
+references/verifying/methodology.md (U36, **REQUIRED**).
 
 ### T11 — `channels_last`: free Tensor-Core speedup for conv nets under AMP
 
@@ -214,7 +216,7 @@ precision-stability P6) or `bf16=True` in HF `TrainingArguments`. The full preci
 vs the V100/T4 fp16-only path, GradScaler mechanics, NaN/overflow) is owned by
 **references/training/precision-stability.md P1–P10** (cross-link; do NOT restate). The *memory* angle and
 the activation-bucket math is **oom-memory.md M6**. A NaN/divergence after the swap is a numerics question →
-precision-stability / verifying-dl-experiments (**REQUIRED**).
+precision-stability / references/verifying/methodology.md (**REQUIRED**).
 
 ---
 
@@ -247,7 +249,7 @@ raised" (https://docs.pytorch.org/docs/2.12/generated/torch.nn.functional.scaled
   --no-build-isolation`. Prefer a **prebuilt wheel** matching the `cuXX/torchYY/cpZZ` triple
   (https://github.com/Dao-AILab/flash-attention/issues/1038, https://pypi.org/project/flash-attn/). A
   torch/CUDA mismatch is **gotchas_universal.md U28**. Whether the fused kernel changes outputs (causal-mask
-  edge cases) is a numerics check → verifying-dl-experiments (**REQUIRED**).
+  edge cases) is a numerics check → references/verifying/methodology.md (**REQUIRED**).
 
 ### T15 — `torch.compile`: fuse kernels + cut launch overhead (one line, real gains)
 
@@ -267,7 +269,7 @@ raised" (https://docs.pytorch.org/docs/2.12/generated/torch.nn.functional.scaled
 Reported ~2.2× mean-inference speedups; training gains real but model-dependent. **First step(s) are slow**
 — compilation is lazy on first call (https://huggingface.co/docs/transformers/en/perf_torch_compile); exclude
 warm-up from any throughput measurement. Set `fullgraph=True` while developing to surface graph breaks loudly
-instead of silently losing speed. Whether the compiled *numbers* match eager → verifying-dl-experiments
+instead of silently losing speed. Whether the compiled *numbers* match eager → references/verifying/methodology.md
 (**REQUIRED**).
 
 ### T16 — `torch.compile` recompilation trap: variable shapes silently blow the cache → eager
@@ -316,7 +318,7 @@ batches under-fill Tensor Cores and amortize launch/sync overhead poorly).
 
 **Fix**: raise micro-batch toward the VRAM limit; keep the **effective** batch fixed with grad-accum if the
 result depends on it (`batch 4 × accum 16` beats `batch 1 × accum 64` — oom-memory.md M5). Accuracy/effective-
-batch implications (LR scaling, accumulation loss-weighting) → verifying-dl-experiments (**REQUIRED**).
+batch implications (LR scaling, accumulation loss-weighting) → references/verifying/methodology.md (**REQUIRED**).
 Sizing alongside a concurrent job + `expandable_segments` = **gotchas_universal.md U10** / oom-memory.md M8.
 
 ---
@@ -347,7 +349,7 @@ print(prof.key_averages().table(sort_by="self_cuda_time_total", row_limit=15))
 (https://docs.pytorch.org/tutorials/intermediate/tensorboard_profiler_tutorial.html). Densely-packed GPU
 timeline ⇒ GPU-bound; sort by `self_cuda_time_total` for the hottest kernel (T14/T15). Time in `nccl:*` not
 overlapped ⇒ comms-bound (T23). On a remote box write the trace and view locally — for raw
-`export_chrome_trace("trace.json")` open at `chrome://tracing`; `scp` it down (references/ssh_transport.md),
+`export_chrome_trace("trace.json")` open at `chrome://tracing`; `scp` it down (references/run-remote/ssh_transport.md),
 never run a viewer over ssh.
 
 ### T20 — `nsys` / Nsight Systems: system-wide timeline when the gap is below PyTorch's view
@@ -392,7 +394,7 @@ py-spy record -o prof.svg --pid <PID>   # flame graph over a window
 ```
 "The profiled program needs no import, no decorator, and no restart." On a rented box mid-run, `py-spy dump`
 instantly distinguishes a *hung* process (stuck in `recv`/lock/`all_reduce`) from a *slow* one (busy in a
-transform) — pairs with the "is it actually hung?" check (gotchas_universal.md U17, verifying-dl-experiments
+transform) — pairs with the "is it actually hung?" check (gotchas_universal.md U17, references/verifying/methodology.md
 **REQUIRED**). May need `--native` for C-extension frames and `sudo`/`SYS_PTRACE` to attach.
 
 ### T22 — CUDA memory snapshot/visualizer → oom-memory.md M19
@@ -426,9 +428,9 @@ references/training/distributed-launch.md, REQUIRED)**:
 - Remove per-step host syncs (`loss.item()` every step, prints, eager `.cpu()`) that serialize the stream.
 
 **Inter-node** transport (NCCL picking the wrong NIC, fabric-manager hang, 1800 s timeout masking a
-straggler, MTU mismatch) is **references/multinode.md** (**REQUIRED** for ≥2 instances) — a comms "slowdown"
+straggler, MTU mismatch) is **references/run-remote/multinode.md** (**REQUIRED** for ≥2 instances) — a comms "slowdown"
 across boxes is usually one of those, not a bucket-size tune. Whether a world-size change silently rescaled
-the effective batch/LR is a science question → verifying-dl-experiments (**REQUIRED**).
+the effective batch/LR is a science question → references/verifying/methodology.md (**REQUIRED**).
 
 ---
 
@@ -443,9 +445,9 @@ the effective batch/LR is a science question → verifying-dl-experiments (**REQ
   TF32-off footgun · P19 determinism-vs-`cudnn.benchmark` speed trade.
 - **references/training/distributed-launch.md** — torchrun/Accelerate/DeepSpeed launch, DDP/FSDP sharding,
   and the desync/hang toolkit (the launch substrate this file's T23 sits on).
-- **references/multinode.md** — inter-node NCCL/NIC/fabric/timeout/MTU (the wire between boxes). Single-box
+- **references/run-remote/multinode.md** — inter-node NCCL/NIC/fabric/timeout/MTU (the wire between boxes). Single-box
   users skip.
-- **verifying-dl-experiments** (**REQUIRED**) — owns *is-the-number-real*: whether a kernel/precision/compile
+- **references/verifying/methodology.md** (**REQUIRED**) — owns *is-the-number-real*: whether a kernel/precision/compile
   swap changed the result, whether dropping samples or a GPU-side transform shifted the distribution, the
   0%-util diagnosis (U38), determinism (U36). This file makes training *fast*; that skill decides if the
   *faster result is still true*.

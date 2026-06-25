@@ -3,7 +3,7 @@
 #
 # Each dir is pulled in its own session, so one network blip never loses the rest,
 # and re-running skips already-complete dirs. A single `scp -r` of a huge tree dies
-# on any blip and does NOT resume — see references/gotchas_universal.md (transfer
+# on any blip and does NOT resume — see references/run-remote/gotchas_universal.md (transfer
 # resets). This uses rsync --partial, which resumes a half-pulled dir in place.
 #
 # Usage (override any var from the environment):

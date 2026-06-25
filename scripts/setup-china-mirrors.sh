@@ -2,7 +2,7 @@
 # One-shot China-network setup for a rented GPU box behind the GFW.
 # scp this to the instance, then `source` it (it exports env vars into the CURRENT shell):
 #   scp scripts/setup-china-mirrors.sh <alias>:/root/ && ssh <alias> 'source /root/setup-china-mirrors.sh'
-# Full rationale + the no_proxy trap + the resumable-download ladder: references/china-network.md
+# Full rationale + the no_proxy trap + the resumable-download ladder: references/run-remote/china-network.md
 set -u
 
 # 1. HuggingFace -> hf-mirror (drop-in; identical repo IDs). MUST be set BEFORE importing
@@ -32,4 +32,4 @@ if [ -n "${http_proxy:-}${https_proxy:-}" ]; then
 fi
 
 echo "[setup-china-mirrors] HF_ENDPOINT=$HF_ENDPOINT  HF_HOME=$HF_HOME"
-echo "[setup-china-mirrors] done. conda: edit ~/.condarc per references/china-network.md (NEVER mirror pytorch-nightly)."
+echo "[setup-china-mirrors] done. conda: edit ~/.condarc per references/run-remote/china-network.md (NEVER mirror pytorch-nightly)."

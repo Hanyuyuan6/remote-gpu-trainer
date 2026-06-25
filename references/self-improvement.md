@@ -17,7 +17,7 @@ To jump: `grep -in '<keyword>' references/self-improvement.md`.
 ## 1. The bar — do NOT enshrine a one-off
 
 A surprising failure is a **hypothesis, not a gotcha** (principle #3; **REQUIRED:**
-`verifying-dl-experiments`). Sediment a NEW gotcha ONLY when all three hold:
+`references/verifying/methodology.md`). Sediment a NEW gotcha ONLY when all three hold:
 
 - **Root-caused** — the mechanism is understood, not just "it worked after I retried."
 - **Reproduced or clearly mechanistic** — not a single flaky incident (a transient network blip is not a gotcha).
@@ -31,8 +31,8 @@ one-offs is exactly the catalog rot this bar exists to prevent.
 | What was learned | Where it goes | Form |
 |---|---|---|
 | **User/personal/host-specific** — this account's quirk, the user's preference, the usual GPU plan, "on MY box X is true" | **the host's `memory/` system** (host-specific, personal, may be ephemeral) | a `reference` / `project` / `feedback` fact, one per file, deduped |
-| **A project-level fact or recurring error the user keeps hitting on THEIR project** — a config quirk, "always run X first", a path that must be Y, an env that must be activated | a **project instructions file in the user's repo** — `CLAUDE.md` / `AGENTS.md` / `.cursorrules` (persists cross-session AND cross-tool AND for collaborators, unlike host memory) | a short imperative rule; **propose, don't auto-write** (§3) |
-| **Generalizable platform gotcha** | `profiles/<platform>.md` §7 (platform-pinned) or `references/gotchas_universal.md` (cross-platform) | `symptom → root cause → fix` + a source URL |
+| **A project-level fact or recurring error the user keeps hitting on THEIR project** — a config quirk, "always run X first", a path that must be Y, an env that must be activated | a **project instructions file in the user's repo** — whatever per-project rules file the host honors (persists cross-session AND cross-tool AND for collaborators, unlike your agent's memory) | a short imperative rule; **propose, don't auto-write** (§3) |
+| **Generalizable platform gotcha** | `profiles/<platform>.md` §7 (platform-pinned) or `references/run-remote/gotchas_universal.md` (cross-platform) | `symptom → root cause → fix` + a source URL |
 | **Generalizable training-debug gotcha** | `references/training/<topic>.md` | same form |
 | **A correction** (a fact here is now wrong/stale) | edit that file; re-stamp its `verified <month>` | note old → new + URL |
 
@@ -70,5 +70,5 @@ Platform prices, billing verbs, and limits **change**. Every platform fact is an
 irreversible ones (`terminate` / `destroy` / release) — **re-verify it against the platform's current
 docs in the same session.** If a fact is stale, fix it (the §2 correction row) and re-stamp the date. A
 quarterly re-verification of each profile's §5 TEARDOWN/BILLING section keeps the highest-stakes facts
-honest — schedulable via the host's recurring runner (on Claude Code `/schedule`; other hosts → `references/monitoring_patterns.md` §7). Run `scripts/check_staleness.py` to list every `verified`
+honest — schedulable via the host's recurring runner (on Claude Code `/schedule`; other hosts → `references/run-remote/monitoring_patterns.md` §7). Run `scripts/check_staleness.py` to list every `verified`
 stamp older than N months (a mechanical reminder of WHAT to re-check — it does not verify the fact itself).

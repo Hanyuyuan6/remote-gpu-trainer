@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # reap_vram_zombies.sh — find (and optionally kill) PIDs holding VRAM that the
-# nvidia-smi process list cannot see (see references/gotchas_universal.md U11).
+# nvidia-smi process list cannot see (see references/run-remote/gotchas_universal.md U11).
 #
 # After a crashed DDP run or a killed container, a process can keep a CUDA context
 # (and its VRAM) alive while NOT appearing in `nvidia-smi`'s process table — so a

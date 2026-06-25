@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gpu_health.sh — portable pre-flight GPU-health probe for a rented box (see references/gotchas_universal.md U21-U23).
+# gpu_health.sh — portable pre-flight GPU-health probe for a rented box (see references/run-remote/gotchas_universal.md U21-U23).
 #
 # Runs three independent checks and prints ONE PASS / WARN / FAIL summary:
 #   1. live sampling     — nvidia-smi dmon over a few seconds (power/util/clocks/mem/temp)
@@ -11,7 +11,7 @@
 #   2  HARD FAIL     — dead/throttling GPU; re-rent a DIFFERENT box, do not launch here
 #
 # Usage:  bash gpu_health.sh [GPU_INDEX]      # default 0
-# On a rental there is no "reseat the card" — a HARD fail means stop + re-rent (see references/gotchas_universal.md U21-U23).
+# On a rental there is no "reseat the card" — a HARD fail means stop + re-rent (see references/run-remote/gotchas_universal.md U21-U23).
 # NEVER an unquoted pipe inside a grep regex (it reads stdin and hangs).
 
 set -u
@@ -89,7 +89,7 @@ SM_MAX="${SM_MAX:-0}"
 echo "   temp=${TEMP_C}C  sm_clock=${SM_CUR}MHz  sm_max=${SM_MAX}MHz"
 
 # ---------------------------------------------------------------------------
-# CHECK 2 — Xid hardware-error scan (see references/gotchas_universal.md U21-U23).
+# CHECK 2 — Xid hardware-error scan (see references/run-remote/gotchas_universal.md U21-U23).
 #   Xid is the canonical NVIDIA hardware-failure channel in the kernel ring buffer.
 #   Xid 48 = double-bit (uncorrectable) ECC  -> the GPU is effectively DEAD.
 #   Xid 79 = "GPU has fallen off the bus"     -> PCIe link lost; board is gone.
@@ -115,7 +115,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# CHECK 3 — thermal / power throttling (see references/gotchas_universal.md U21-U23).
+# CHECK 3 — thermal / power throttling (see references/run-remote/gotchas_universal.md U21-U23).
 # Two independent signatures, either one trips a HARD fail:
 #   (a) the kernel-reported clocks-throttle reasons via nvidia-smi -q -d PERFORMANCE
 #       (HW thermal slowdown / HW power brake / SW thermal slowdown active = throttling now);

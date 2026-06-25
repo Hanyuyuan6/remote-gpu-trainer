@@ -1,0 +1,56 @@
+THIRD-PARTY LICENSES & ATTRIBUTIONS
+===================================
+
+This skill (remote-gpu-trainer) is licensed under the MIT License; see LICENSE.
+The notices below cover absorbed first-party content and the third-party tools
+the reference docs and scripts instruct an agent to invoke.
+
+
+1. ABSORBED FIRST-PARTY CONTENT
+-------------------------------
+
+The verification layer (references/verifying/ and scripts/wandb_forensics.py)
+incorporates content merged in from the author's previously separate
+`verifying-dl-experiments` skill, which was authored by the same copyright
+holder and released under the MIT License. That content has been absorbed into
+this skill and is redistributed here under this skill's MIT License (see
+LICENSE). No third-party copyright attaches to the merge itself.
+
+    verifying-dl-experiments — Copyright (c) 2026 Yuyuan Han — MIT License
+
+
+2. THIRD-PARTY TOOLS REFERENCED (not bundled)
+---------------------------------------------
+
+This skill bundles no third-party source code. The reference docs and script
+templates direct the agent to invoke the following tools, each distributed by
+its own project under its own license. They are dependencies of the *workflow*,
+not redistributed here; their names and trademarks belong to their respective
+owners and are used for identification only.
+
+  - PyTorch (incl. torchrun)        — BSD-3-Clause
+  - Hugging Face accelerate         — Apache-2.0
+  - DeepSpeed                       — Apache-2.0 (with MIT-licensed components)
+  - Hugging Face Hub / hf CLI       — Apache-2.0
+  - Weights & Biases client (wandb) — MIT
+  - Trackio                         — Apache-2.0
+  - tmux                            — ISC
+  - GNU coreutils / rsync / OpenSSH — GPL-3.0 / GPL-3.0 / BSD-style (OpenSSH)
+  - NVIDIA CUDA tools (nvidia-smi)  — NVIDIA proprietary EULA
+
+Platform names referenced for operational guidance (AutoDL, RunPod, vast.ai,
+Lambda, Paperspace, 恒源云 / 矩池云 / Featurize / 揽睿星舟, Slurm, Kubernetes,
+Colab, Kaggle) are trademarks of their respective owners and are used here for
+identification and interoperability only; this skill is not affiliated with or
+endorsed by any of them.
+
+
+3. OPTIONAL COMPANION SKILLS (separate installs)
+------------------------------------------------
+
+The companion skills listed in references/companions.md (nature-figure,
+publication-chart-skill, scipilot-figure, the experiment-verifier agent,
+superpowers:dispatching-parallel-agents, huggingface-skills:hf-cli,
+huggingface-skills:huggingface-trackio) are NOT bundled or redistributed with
+this skill. Each is installed separately and governed by its own license. This
+skill is fully functional without any of them.

@@ -23,7 +23,7 @@ channel and teardown is manual** — every other platform profile is a *diff* ag
 
 Read this whole file before Phase 0 on any unbranded rental, then jump to the matching sub-section
 (Slurm / Kubernetes / Colab-Kaggle) if the backend is a scheduler, a cluster, or a notebook.
-**Universal gotchas are NOT restated here** — see `references/gotchas_universal.md`.
+**Universal gotchas are NOT restated here** — see `references/run-remote/gotchas_universal.md`.
 
 **Table of contents** (`grep -in '<keyword>' profiles/generic-ssh.md` to jump):
 - BASELINE: 8-field schema for the bare-SSH box (sections 1–8)
@@ -42,7 +42,7 @@ swappable plug.
 
 - **Entry point:** `ssh user@host` — key-based, fronted by an `~/.ssh/config` alias so the rest of
   the workflow says `ssh gpu-box`. There is **no platform API, console, or CLI** — SSH is the *only*
-  control channel (this is what makes the box "generic"). Set the alias per `references/ssh_transport.md`.
+  control channel (this is what makes the box "generic"). Set the alias per `references/run-remote/ssh_transport.md`.
 - **Push code:** `rsync -avz --partial ./proj/ gpu-box:~/proj/` — resumable, delta-only on re-syncs;
   prefer over `scp` (a reset `scp` restarts from zero). Pull results the same way, reversed.
 - **Download weights/datasets ON the box**, not over the local uplink: `ssh gpu-box 'cd ~/proj &&
@@ -53,7 +53,7 @@ swappable plug.
   `which python && python -V && nvidia-smi` first. If the image has a usable env, treat it as AutoDL's
   base (do not `conda create` on a throwaway box); if it is bare, `conda create` / `venv` once and
   pin it. State the seed/determinism in the run itself — no platform does it here (**REQUIRED:**
-  `verifying-dl-experiments`).
+  `references/verifying/methodology.md`).
 
 → **verify:** `ssh gpu-box 'python -c "import torch;print(torch.cuda.is_available())"'` prints `True`.
 
@@ -94,7 +94,7 @@ SSH drop sends SIGHUP and kills the job; `tmux` (§6) is what severs the job fro
 Resume is **self-built**: checkpoint full state (model + optimizer + scheduler + epoch/step + RNG +
 dataloader position) atomically (`tmp`→`fsync`→`os.rename`) on a periodic timer, and load-latest
 unconditionally on startup so the *identical launch command* resumes. Cadence formula + atomic-write
-pattern → `references/spot-resilience.md`. (Spot-rented bare boxes exist — if the provider can evict,
+pattern → `references/run-remote/spot-resilience.md`. (Spot-rented bare boxes exist — if the provider can evict,
 treat it like the vast.ai profile: tiny/zero grace, checkpoint continuously.)
 
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
@@ -122,12 +122,12 @@ overnight idle instance is the most expensive single mistake on metered hardware
   `scripts/run_queue.sh.template` for a resumable serial queue; never edit a queue script while it is
   being read (principle #6 — version the filename).
 
-## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/gotchas_universal.md`)
+## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
 - **GEN1 — Forgotten box bills 24/7.** Symptom: a week-old invoice for an instance that finished
   training on day one. → Root cause: nothing on a bare box reclaims it; the human is the only janitor.
   → Fix: make teardown a tracked Phase-5 step; after the verified pull, prompt the user to stop/destroy
-  (never auto-act — principle #9); for cross-session safety set a recurring reminder (Claude Code `/schedule`; other hosts → `references/monitoring_patterns.md` §7) to re-check.
+  (never auto-act — principle #9); for cross-session safety set a recurring reminder (Claude Code `/schedule`; other hosts → `references/run-remote/monitoring_patterns.md` §7) to re-check.
 - **GEN2 — SSH drop kills the run (no tmux).** Symptom: training dies the moment the laptop sleeps or
   the network blips. → Root cause: the job is a child of the SSH shell; the drop sends SIGHUP.
   → Fix: launch inside `tmux` (or `nohup … & disown`) **before** the long run starts — not after it is
@@ -141,12 +141,12 @@ overnight idle instance is the most expensive single mistake on metered hardware
 - **GEN5 — Heavy DL static-checked on the wrong machine.** Symptom: an OOM or a CUDA mismatch only
   reproduces on the box. → Root cause: static/import checks ran locally, the real compute is remote.
   → Fix: run the cheap CPU smoke locally (Phase 2), run the heavy DL **on the box**; for the
-  bug-vs-effect call once it runs, defer to **REQUIRED:** `verifying-dl-experiments`.
+  bug-vs-effect call once it runs, defer to **REQUIRED:** `references/verifying/methodology.md`.
 - **GEN6 — A box reboot silently orphans the run (`tmux` does not survive it).** Symptom: a detached
   job vanishes with a clean `dmesg`, idle GPU, and low `uptime`; `tmux ls` shows no sessions.
   → Root cause: `tmux`/`nohup` survive an SSH drop but **not** a host reboot — the rental rebooted (host
   maintenance, kernel update, or an OOM that took the box) and every session died. → Fix: treat reboot
-  as one of the four "vanished process" causes (cross-link `references/gotchas_universal.md` U3); make
+  as one of the four "vanished process" causes (cross-link `references/run-remote/gotchas_universal.md` U3); make
   resume idempotent (§4) so the *same* launch command continues from the last checkpoint; for a box that
   reboots often, add an `@reboot` cron or a systemd unit that re-launches the detached queue.
 - **GEN7 — A second concurrent run silently halves throughput by oversubscribing the GPU.** Symptom: two
@@ -215,7 +215,7 @@ wrap `srun` *inside* an `sbatch` script for long runs.
   (the `B:` prefix signals the **batch shell**, not the steps; **Slurm may fire it up to 60 s EARLY** —
   size the warning with that slack, verified slurm.schedmd.com/sbatch.html 2026-06), trap it to set a flag,
   and `#SBATCH --requeue` to auto-return to the queue (the script restarts **from its beginning with the
-  same job ID**) and resume from the last checkpoint. Cadence formula → `references/spot-resilience.md`.
+  same job ID**) and resume from the last checkpoint. Cadence formula → `references/run-remote/spot-resilience.md`.
 - **Native orchestration replaces hand-rolled fan-out:** `--array=0-15` (rate-limit with `%4`) fans out
   ablation cells, `--dependency=afterok:<jobid>` chains stages (runs only on exit-code-0).
 - **No per-hour teardown — watch fairshare.** Nodes are not `shutdown`; the job just ends. The
@@ -225,9 +225,9 @@ wrap `srun` *inside* an `sbatch` script for long runs.
   (**Apptainer/Singularity** — Docker is usually banned).
 - **Filesystem split:** the shared parallel FS (`$HOME`, `/scratch`) persists and is where checkpoints
   go; node-local **`$TMPDIR` is wiped when the job ends** — stage scratch to `$TMPDIR`, checkpoint to
-  `/scratch`. Multi-node NCCL/fabric specifics → `references/multinode.md`.
+  `/scratch`. Multi-node NCCL/fabric specifics → `references/run-remote/multinode.md`.
 
-### Slurm gotchas (platform-pinned; universal → `references/gotchas_universal.md`)
+### Slurm gotchas (platform-pinned; universal → `references/run-remote/gotchas_universal.md`)
 
 - **SLURM1 — Checkpoint *inside* the signal handler corrupts the checkpoint.** Symptom: `--requeue`
   works most of the time, then intermittently writes a corrupt `hpc_ckpt` and the requeued job won't
@@ -271,7 +271,7 @@ wrap `srun` *inside* an `sbatch` script for long runs.
   (sacct only finalizes at exit); cross-check against `ReqMem` to catch a creeping leak before the cgroup kills it.
 - **GPU actually allocated to the step?** inside the job: `echo $CUDA_VISIBLE_DEVICES && nvidia-smi -L`
   — a mismatch ⇒ SLURM3 (`--gres`/`--gpus-per-task` not on the `srun`).
-- **Multi-node hang** (job RUNNING, no progress) ⇒ NCCL/fabric, not Slurm → `references/multinode.md`.
+- **Multi-node hang** (job RUNNING, no progress) ⇒ NCCL/fabric, not Slurm → `references/run-remote/multinode.md`.
 
 **Slurm OVERRIDES:** `DETACH=sbatch` · `DURABLE_DIR=/scratch/$USER/proj` (durable) + `DATA_DIR=$TMPDIR`
 (node-local, wiped) · `PROXY_HOOK=module load cuda` · teardown=`n/a (watch sacct + fairshare)`.
@@ -311,7 +311,7 @@ each failure creates a *new* pod, it does not restart the old one; verified kube
   **node/cluster keeps costing** unless an autoscaler scales it down. **delete ≠ scale-down** — the
   node release is the real cost lever, distinct from the baseline's single "destroy the box."
 
-### Kubernetes gotchas (platform-pinned; universal → `references/gotchas_universal.md`)
+### Kubernetes gotchas (platform-pinned; universal → `references/run-remote/gotchas_universal.md`)
 
 - **K8S1 — Pod stuck `Pending`: `Insufficient nvidia.com/gpu`.** Symptom: `kubectl get pods` shows
   `Pending`; the events read `0/N nodes are available: N Insufficient nvidia.com/gpu`. → Root cause:
@@ -401,7 +401,7 @@ the baseline — the work cannot be kept alive long enough.
   only the finished version's logs).
 - **Code delivery:** clone from GitHub or pull the platform's dataset mounts — no scp.
 
-### Colab / Kaggle gotchas (platform-pinned; universal → `references/gotchas_universal.md`)
+### Colab / Kaggle gotchas (platform-pinned; universal → `references/run-remote/gotchas_universal.md`)
 
 - **NB1 — Drive sync lag silently loses the "saved" checkpoint.** Symptom: training logs
   `saved best.pth to /content/drive/...`, the runtime disconnects an hour later, and the file is **0 bytes

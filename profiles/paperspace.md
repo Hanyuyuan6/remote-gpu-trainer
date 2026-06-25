@@ -19,7 +19,7 @@ local_nvme: host-dependent  # ephemeral workspace on Notebooks; block storage on
 One-line purpose: substrate for running detached GPU jobs on Paperspace Gradient (managed Jupyter
 notebooks/deployments) and Paperspace Core (raw Linux VMs, "Machines") — what stops the meter, what
 survives a stop vs a destroy, and the auto-shutdown clock that ends every long run. Universal gotchas are
-NOT repeated here — see `references/gotchas_universal.md`.
+NOT repeated here — see `references/run-remote/gotchas_universal.md`.
 
 > **Surface to the user up front (principle #10):** ⚠️ Danger clocks — an **auto-shutdown timer ends every Notebook/Core run** (set it consciously; Gradient free notebooks hard-cap at 6 h); **snapshots / block storage keep billing after a machine is destroyed** (orphan bleed). Heads-up — the **Gradient CLI/API was deprecated 15 Jul 2024** (pin `gradient<3.0`; the three-CLI mess, §1).
 
@@ -82,7 +82,7 @@ behaves like AutoDL's 关机 in this respect. Only **destroy/delete** removes st
 **Gradient Notebooks** — `/storage` and `/notebooks` are **separate branches from `/`, NOT nested**
 (verified DO notebooks/details/storage-architecture 2026-06):
 - `/storage` — **shared persistent**, team-wide, scoped to a **storage region/cluster**. Survives stop.
-  (Team-shared ⇒ never write secrets here — see §7 / `references/gotchas_universal.md`.)
+  (Team-shared ⇒ never write secrets here — see §7 / `references/run-remote/gotchas_universal.md`.)
 - `/notebooks` — **per-notebook persistent**, managed via the console File Manager. Survives stop.
 - everything else — **ephemeral workspace** (incl. `/usr/local/lib` where `pip` lands), wiped on stop.
 
@@ -111,7 +111,7 @@ No documented inode cap on either tier; still monitor `df -i` (universal, U7 / p
 
 - **Egress.** Direct and unproxied to HF/GitHub/PyPI; no `network_turbo`-style accelerator and no
   documented egress fee. China-mirror relevance is **N/A as a platform feature** — relevant only when
-  operating from inside China and supplying a private mirror (then `references/china-network.md`).
+  operating from inside China and supplying a private mirror (then `references/run-remote/china-network.md`).
 - **Public IP.** Core machines are reached by **public IP**, of two kinds (verified DO
   machines/how-to/manage-public-ips 2026-06):
   - **Static** — "the same IP address every time it powers on … remains in your account until you delete
@@ -161,7 +161,7 @@ different in kind and BOTH are deterministic, not random eviction:
    (Core) *before* the auto-shutdown window, then restart and load-latest-on-startup unconditionally.
    Because the clock is known in advance, cadence can be planned rather than guessed — but the
    load-latest-on-startup spine (principle #8) is what makes the restart idempotent. Young/Daly cadence
-   formula → `references/spot-resilience.md`.
+   formula → `references/run-remote/spot-resilience.md`.
 
 ---
 
@@ -216,7 +216,7 @@ If `tmux` is absent on a minimal image, fall back to `nohup <cmd> </dev/null >lo
 
 ---
 
-## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/gotchas_universal.md`)
+## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
 - **PS1 — "Stopped the machine, still getting billed."**
   Symptom: GPU meter halted but the bill keeps climbing while the box is off.
@@ -272,7 +272,7 @@ If `tmux` is absent on a minimal image, fall back to `nohup <cmd> </dev/null >lo
   Root cause: free Gradient notebooks are **public by default; private notebooks require a paid plan**
   (verified Paperspace blog / pricing 2026-06).
   Fix: never put confidential code or any secret in a free notebook; upgrade to a paid plan for private
-  notebooks. Treat the free tier as a public scratchpad. (Secrets hygiene → `references/gotchas_universal.md`.)
+  notebooks. Treat the free tier as a public scratchpad. (Secrets hygiene → `references/run-remote/gotchas_universal.md`.)
 
 - **PS8 — Free notebook won't start / sits "pending."**
   Symptom: a free-GPU notebook stays pending or errors "out of capacity"; only one notebook will run.
@@ -305,13 +305,13 @@ If `tmux` is absent on a minimal image, fall back to `nohup <cmd> </dev/null >lo
   issue #13 2026-06). This is the platform-pinned face of the universal CUDA-triangle (U28).
   Fix: install a torch build matching the box's CUDA (do not force-upgrade the host driver on a rental);
   pick a template whose Ubuntu/driver matches the GPU (22.04 for H100/A100). Full triangle → U28 in
-  `references/gotchas_universal.md`.
+  `references/run-remote/gotchas_universal.md`.
 
 - **PS12 — Gradient Deployment / custom image won't pull or drifts.**
   Symptom: a Deployment fails to pull `<user>/img:tag`, or "the same image" behaves differently over time.
   Root cause: a moving tag (`:latest`) resolves to a different layer set; private-registry creds missing.
   Fix: pin the image by digest (`@sha256:`) and supply registry creds as a Gradient **secret**, not inline.
-  General form → U30 in `references/gotchas_universal.md`.
+  General form → U30 in `references/run-remote/gotchas_universal.md`.
 
 - **PS13 — Platform-specific debugging.** Commands + what to check (Core uses standard Linux tooling; the
   Notebook-only items are the platform delta):
@@ -362,4 +362,4 @@ SSH_HOST=<machine-ip>            # placeholder — ML-in-a-Box user is `paperspa
 ```
 
 Reminder: secrets referenced by env-var NAME or Gradient secret only — never inline a key, and never write
-one onto the team-shared `/storage` (universal secrets gotcha → `references/gotchas_universal.md`).
+one onto the team-shared `/storage` (universal secrets gotcha → `references/run-remote/gotchas_universal.md`).

@@ -6,7 +6,7 @@ password-less, plus the copy/secret patterns that survive flaky networks and sho
 hosts, ports, and credential locations are **profile facts** — this file owns the *mechanism*, the
 profile (`profiles/<platform>.md` §1/§3/§8) owns the *values*.
 
-To jump: `grep -in '<keyword>' references/ssh_transport.md` (e.g. `keepalive`, `rsync`, `stdin`, `crlf`).
+To jump: `grep -in '<keyword>' references/run-remote/ssh_transport.md` (e.g. `keepalive`, `rsync`, `stdin`, `crlf`).
 
 ## Table of contents
 
@@ -37,7 +37,7 @@ ssh-keygen -t ed25519 -C "<label>"
 reused across all instances — generate once, push the **public** half (§2) to each box. The private
 half (`~/.ssh/id_ed25519`, no `.pub`) never leaves the local machine and **never** goes onto a rental,
 a shared FS, or a cloud agent (a cloud scheduler runs in an isolated sandbox with no access to it — and
-putting a private key there is a secret leak; see `references/monitoring_patterns.md`).
+putting a private key there is a secret leak; see `references/run-remote/monitoring_patterns.md`).
 
 ## 2. Push the public key to an instance
 
@@ -95,7 +95,7 @@ Host proj-2
   the path does not silently drop a parked connection (mid-`scp`, or an open monitor).
 - `ServerAliveCountMax 120` — tolerate up to 120 missed heartbeats before declaring the link dead (≈2 h
   of network instability survived). Lower it (e.g. 3) for a *bounded* monitor that should self-kill on a
-  blip rather than hang — see the short-connection poll in `references/monitoring_patterns.md`.
+  blip rather than hang — see the short-connection poll in `references/run-remote/monitoring_patterns.md`.
 - `TCPKeepAlive yes` — let the OS also emit TCP-layer keepalives, catching a peer that vanishes
   ungracefully.
 
@@ -142,7 +142,7 @@ failure doesn't lose the rest. If `rsync` is missing on the remote image, `apt-g
 online) or use the §6 loop.
 
 > The bulk-download stall-retry ladder (HF/ModelScope mirror swaps, `timeout … && break` loops) is a
-> *download-from-the-internet* concern, not host↔host copy — that lives in `references/china-network.md`.
+> *download-from-the-internet* concern, not host↔host copy — that lives in `references/run-remote/china-network.md`.
 
 ## 6. Bulk per-dir download loop
 
@@ -209,7 +209,7 @@ Symptom → Root cause → Fix:
 Every shell script in `scripts/` ships LF and starts `#!/usr/bin/env bash` + `set -u`; keep that
 contract when authoring new ones. **Never** put an unquoted `|` inside a `grep` regex in a transport or
 poll script — the shell splits it into piped commands and the first reads stdin → hangs forever
-(`references/monitoring_patterns.md`).
+(`references/run-remote/monitoring_patterns.md`).
 
 ## 9. Two SSH flavors — proxied/basic SSH cannot `scp`
 
@@ -232,7 +232,7 @@ object storage / HF Hub from on-box and pull from there).
 ## 10. Transport gotchas (Symptom → Root cause → Fix)
 
 Universal gotchas (disk-full, inode, OOM, silent sync) are **not** repeated here — see
-`references/gotchas_universal.md`. These are transport-specific.
+`references/run-remote/gotchas_universal.md`. These are transport-specific.
 
 **T1 — SSH exits 255 / "Connection reset" right after a `pkill`/`kill`.**
 Symptom: `ssh <alias> 'pkill -9 -f src.train'` returns `Connection reset by peer`, exit 255. → Root

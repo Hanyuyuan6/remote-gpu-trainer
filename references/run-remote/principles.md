@@ -5,7 +5,7 @@ These are the *why* behind every phase and gotcha. They hold on any **metered, i
 the concrete paths/CLI change (those live in `profiles/<platform>.md`). Internalize these; the recipes
 follow. The one-line form is in `SKILL.md`; this file carries the cross-platform nuance.
 
-To jump: `grep -n '^## ' references/principles.md`.
+To jump: `grep -n '^## ' references/run-remote/principles.md`.
 
 ---
 
@@ -30,7 +30,7 @@ sufficient* — it won't catch convergence — but it catches the dumb-and-expen
 only surface after an instance spins up.
 
 *Boundary:* this skill owns *when* to run the smoke (the pre-rent gate). The smoke's *content* — what to
-assert, how to shrink the problem — belongs to **`verifying-dl-experiments`**. Don't duplicate it here.
+assert, how to shrink the problem — belongs to **`references/verifying/methodology.md`**. Don't duplicate it here.
 
 ---
 
@@ -47,15 +47,15 @@ artifacts (`tmux ls` / `squeue` / `pgrep`, output `mtime`, a load-test), tear a 
 supersede its job, and match a watcher's lifetime to the wait's duration.
 
 > **Monitoring physics this rests on** (the 600 s cap and `run_in_background` are **Claude Code** harness
-> primitives — on another Agent-Skills host map them per `references/monitoring_patterns.md` §7; the
+> primitives — on another Agent-Skills host map them per `references/run-remote/monitoring_patterns.md` §7; the
 > hang-physics below are pure shell and hold everywhere): foreground Bash hard-caps at 600 s (a long
 > foreground wait is killed at 10 min); `run_in_background` has **no** cap and notifies on exit; a
 > never-*exiting* watcher never notifies; an unquoted `|` inside a poll regex splits into piped commands
-> and the first reads stdin → hangs forever. See `references/monitoring_patterns.md`.
+> and the first reads stdin → hangs forever. See `references/run-remote/monitoring_patterns.md`.
 
 *Universal — the load-bearing spine.* It is the platform instance of
 `superpowers:verification-before-completion`'s Iron Law ("no completion claim without fresh verification
-evidence"). Shared with `verifying-dl-experiments`.
+evidence"). Shared with `references/verifying/methodology.md`.
 
 ---
 
@@ -91,7 +91,7 @@ scratch (periodic checkpoints, unused model caches — one observed sweep left *
 *Mixed:* the inode-cap *number* is a profile fact (AutoDL/China enforce ~200K; RunPod/vast/Lambda spec
 GB quotas with no documented inode cap). The "audit the real mount, clean by value" discipline is core.
 The general form of the many-small-files trap is **shard into tar** (WebDataset) — see
-`references/gotchas_universal.md` U25.
+`references/run-remote/gotchas_universal.md` U25.
 
 ---
 
@@ -110,7 +110,7 @@ edit only when nothing is reading them (`pgrep -af <script>` empty).
 
 Some fraction of identical launches die (a network blip during `wandb.init`, a transient kernel fault, a
 spot preemption). Wrappers must be **idempotent and resumable**; retry the **identical config** rather
-than hand-patching one run (which destroys comparability — see `verifying-dl-experiments`).
+than hand-patching one run (which destroys comparability — see `references/verifying/methodology.md`).
 
 **Bulk transfers are the prototypical flaky step:** wrap them in `timeout`+resume retry loops — a stall
 ≠ permanent failure, and resumable downloads accumulate progress across kills. An acceleration
@@ -121,7 +121,7 @@ transfer uses (a no-proxy probe of a proxied transfer measures nothing).
 
 *Universal.* The **spot/preemption** sub-case is profile-parameterized (central on vast/RunPod; on
 Lambda/Paperspace/China the interruption is auto-shutdown/auto-release/capacity instead) — see principle
-#8 and `references/spot-resilience.md`.
+#8 and `references/run-remote/spot-resilience.md`.
 
 ---
 
@@ -143,7 +143,7 @@ the invariant underneath all of them.
 *Universal.* Cadence is a formula, not a guess — Young/Daly `W = √(2·μ·C)` (μ = mean time between
 preemptions, C = checkpoint write time); round *down* to an iteration boundary. Managed frameworks
 (SkyPilot Managed Jobs, SageMaker) move the box for you but **restart your process from scratch — your
-checkpoint-load is what restores progress.** Details + worked numbers in `references/spot-resilience.md`.
+checkpoint-load is what restores progress.** Details + worked numbers in `references/run-remote/spot-resilience.md`.
 
 ---
 

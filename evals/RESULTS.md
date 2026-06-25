@@ -29,10 +29,10 @@ scenario's `must_cover` points within ~2 hops.
 | runpod-spot-resume-teardown | **PASS** | ≤2 | SKILL.md → `profiles/runpod.md` §4/§5 → `spot-resilience.md` → `checkpoint-resume.md` C3 |
 | vastai-teardown-billing | **PASS** | ≤2 | SKILL.md → `profiles/vastai.md` §5 → `lifecycle_checklist.md` Phase 5 |
 | autodl-inode-disk-full | **PASS** | ≤2 | SKILL.md → the inode/disk gotcha (principle #5 / `gotchas_universal.md` U7) |
-| china-hf-download-stall | **PASS** | ≤2 | SKILL.md → `references/china-network.md` (HF_ENDPOINT=hf-mirror, hf_transfer caution) |
+| china-hf-download-stall | **PASS** | ≤2 | SKILL.md → `references/run-remote/china-network.md` (HF_ENDPOINT=hf-mirror, hf_transfer caution) |
 | lambda-stop-vs-terminate | **PASS** | ≤2 | SKILL.md → `profiles/lambda.md` (no stop state; terminate irreversible) |
 | autodl-first-contact-15day | **PASS** | 1 | SKILL.md principle #10 → `profiles/autodl.md` Surface block + AD-DANGER (关机 auto-releases after 15 days) |
-| result-validity-report-gate | **PASS** | 2 | SKILL.md:48 / Phase-5 report-gate → `references/result-validity.md` V1 (control-diff bug/effect/noise) + V5 (≥3-seed mean±std) + V3 (leakage normcase/same-bytes) + V6 (re-derive before teardown) |
+| result-validity-report-gate | **PASS** | 2 | SKILL.md VERIFY → `references/verifying/methodology.md` §1 (control-diff bug/effect/noise) + §9 (≥3-seed mean±std) + §4 (leakage normcase/same-bytes) + §14 (re-derive before report) |
 
 **Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
 correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs all 15

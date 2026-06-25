@@ -35,7 +35,7 @@ To jump: `grep -in <keyword> profiles/lambda.md`.
 Platform-specific debugging · 8. SCRIPT OVERRIDES.
 
 Universal gotchas (CRLF, inode/`df -i`, silent sync, cgroup OOM, spot grace) are NOT repeated here —
-see `references/gotchas_universal.md`. Universal invariants → `references/principles.md`.
+see `references/run-remote/gotchas_universal.md`. Universal invariants → `references/run-remote/principles.md`.
 
 ---
 
@@ -58,7 +58,7 @@ Entry points:
 
 **Env contract — the image/base IS the env.** Instances ship **Lambda Stack** (NVIDIA driver + CUDA +
 cuDNN + PyTorch/TensorFlow, all upgraded together as one apt metapackage). Run in it directly on the
-throwaway box — do **not** `conda create` on a rental (`references/principles.md` §2), and do not `pip
+throwaway box — do **not** `conda create` on a rental (`references/run-remote/principles.md` §2), and do not `pip
 install torch` over the top (LAM7/LAM8). Lambda Stack's exact CUDA/driver/PyTorch **moves per release**;
 read it off the box (`nvidia-smi`, `python -c "import torch;print(torch.__version__,torch.version.cuda)"`)
 rather than assuming a number. The **durable** form of the env is a Docker image (Lambda recommends running
@@ -103,7 +103,7 @@ path is to `pull` the result off-box (free egress) before terminating.
 
 - **Direct, unproxied egress.** US/global cloud — egress to HF / GitHub / PyPI is direct; **no
   `network_turbo`-style accelerator exists**, and none is needed. China-mirror relevance is **N/A as a
-  platform feature** (relevant only when operating from inside China; then `references/china-network.md`
+  platform feature** (relevant only when operating from inside China; then `references/run-remote/china-network.md`
   applies to the user's own setup, nothing platform-provided).
 - **Free egress both directions** — *"Transparent pricing with no egress fees"* (verified lambda.ai
   pricing 2026-06). Re-pulling a large model or pushing results off-box costs nothing, making
@@ -144,7 +144,7 @@ mid-epoch. The interruption model is different in kind:
   unconditionally on startup, so a fresh post-capacity launch resumes instead of restarting. Because the
   box is cattle, the resume path is exercised on *every* relaunch, not just after a rare preemption.
 
-Cadence formula (Young/Daly) + atomic-write resume → `references/spot-resilience.md`. Here the formula's
+Cadence formula (Young/Daly) + atomic-write resume → `references/run-remote/spot-resilience.md`. Here the formula's
 μ is effectively "time between voluntary relaunches," not a preemption rate.
 
 ---
@@ -198,7 +198,7 @@ is cheap. Cross-link: `superpowers:verification-before-completion` (REQUIRED) fo
 
 ---
 
-## 7. TOP GOTCHAS  (Lambda-pinned — universal ones live in `references/gotchas_universal.md`)
+## 7. TOP GOTCHAS  (Lambda-pinned — universal ones live in `references/run-remote/gotchas_universal.md`)
 
 - **LAM1 — Terminate erases the local NVMe; there is no stop/suspend.**
   Symptom: relaunched instance is blank, yesterday's run gone. → Root cause: local storage is ephemeral

@@ -6,7 +6,7 @@ session, so layer it. Every recipe uses portable primitives — `tmux` OR `squeu
 marker OR an artifact `mtime` — never one platform's paths. Bind the concrete paths/aliases from
 `profiles/<platform>.md`.
 
-To jump: `grep -in '<keyword>' references/monitoring_patterns.md`.
+To jump: `grep -in '<keyword>' references/run-remote/monitoring_patterns.md`.
 
 ## Table of contents
 
@@ -45,7 +45,7 @@ Verified in-session, not assumed. The whole architecture is engineered around th
 
 Corollary — **trust the artifact, not the silence.** When a job "looks done," Read its output file and
 re-check ground truth (`grep DONE log; tmux ls / squeue; nvidia-smi`) before claiming success. Do not
-wait blindly for a notification that may never fire. This is the `verifying-dl-experiments` (REQUIRED)
+wait blindly for a notification that may never fire. This is the `references/verifying/methodology.md` (REQUIRED)
 Iron Law applied to monitoring.
 
 ---
@@ -96,7 +96,7 @@ Each is a single short ssh. Combine several into ONE round-trip for a patrol tic
 and paths come from the profile; the structure is identical everywhere.
 
 > A blank live **TensorBoard tile / web panel** while these probes show a healthy run is **not** a dead
-> run — it is `references/gotchas_universal.md` **U39**: the panel reads a fixed logdir/port your logger
+> run — it is `references/run-remote/gotchas_universal.md` **U39**: the panel reads a fixed logdir/port your logger
 > didn't write to, or the TB/watcher process died (ran foreground, not under the detach primitive), or the
 > port isn't exposed. Fix per the platform profile; never restart a healthy run over an empty panel.
 
@@ -124,10 +124,10 @@ ssh "$HOST" "nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noh
 ```
 - cgroup mem > 90% of max → OOM risk; GPU util > 60% → healthy, not data-bottlenecked.
 - GPU at 0% but the step log advances ≠ idle — it is CPU-data-bound; sample util over several seconds,
-  never one snapshot. (Diagnosis → `verifying-dl-experiments`, REQUIRED.)
+  never one snapshot. (Diagnosis → `references/verifying/methodology.md`, REQUIRED.)
 
 **Disk — the silent killer** — watch `df -i` (inodes) AND `df -h` (bytes); inodes die first on
-many-small-files eval output (→ `references/gotchas_universal.md`):
+many-small-files eval output (→ `references/run-remote/gotchas_universal.md`):
 ```bash
 ssh "$HOST" "df -h '$DATA_MOUNT'; df -i '$DATA_MOUNT'"
 ```
@@ -266,7 +266,7 @@ outcome maps to a FIXED remediation; never blind-retry:
 ssh "$HOST" "grep -B2 -A20 'Traceback' '$RUN_LOG' | head -50"
 ```
 - `basic_ios::clear: iostream error` + `unexpected pos N vs M` → **disk full during checkpoint save**;
-  check `df -h`/`df -i`, prune `latest`/periodic snapshots to recover (→ `references/gotchas_universal.md`).
+  check `df -h`/`df -i`, prune `latest`/periodic snapshots to recover (→ `references/run-remote/gotchas_universal.md`).
 - bare `Killed` / exit 137, no traceback → **cgroup OOM** (workers × big in-RAM tensor); size workers
   vs `memory.max`, not CPU count.
 - `CUDA out of memory` → VRAM, usually consistent across runs (batch too big / concurrent job), rarely
@@ -274,17 +274,17 @@ ssh "$HOST" "grep -B2 -A20 'Traceback' '$RUN_LOG' | head -50"
 - `KeyError` / `AttributeError` → config/code mismatch; investigate code, do not retry.
 - Early-stop far below baseline with a grad_norm P99 spike in epoch 1–2 → likely **probabilistic
   divergence**; whether it's a bug or a real effect, and the retry-the-identical-config rule, belong to
-  `verifying-dl-experiments` (REQUIRED) — this skill owns *running* the retry, not judging the number.
+  `references/verifying/methodology.md` (REQUIRED) — this skill owns *running* the retry, not judging the number.
 - log frozen (no new lines) but checkpoint `mtime` advances → **block-buffered stdout**, not a hang
-  (`references/gotchas_universal.md` U43; run `python -u`/`PYTHONUNBUFFERED=1`).
+  (`references/run-remote/gotchas_universal.md` U43; run `python -u`/`PYTHONUNBUFFERED=1`).
 - `uptime`/`free` on the box look maxed but your cgroup is roomy → **noisy neighbor** on the shared host,
-  not your job (`references/gotchas_universal.md` U41; the authoritative OOM check is the `oom_kill` counter
+  not your job (`references/run-remote/gotchas_universal.md` U41; the authoritative OOM check is the `oom_kill` counter
   in `/sys/fs/cgroup/memory.events`).
 - GPU SM% pinned low while a python thread-storm pegs the cores → **intra-op thread oversubscription** on a
-  vCPU slice (`references/gotchas_universal.md` U40; cap `OMP_NUM_THREADS` to the cgroup quota).
+  vCPU slice (`references/run-remote/gotchas_universal.md` U40; cap `OMP_NUM_THREADS` to the cgroup quota).
 
 Universal gotchas (silent sync, CRLF, mid-run script overwrite, inode caps) are NOT restated here —
-see `references/gotchas_universal.md` (`grep -in '<keyword>' references/gotchas_universal.md` to jump).
+see `references/run-remote/gotchas_universal.md` (`grep -in '<keyword>' references/run-remote/gotchas_universal.md` to jump).
 
 ---
 

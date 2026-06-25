@@ -33,7 +33,7 @@ body:
     attributes:
       label: Where it belongs
       options:
-        - Universal (any rented/remote GPU) → references/gotchas_universal.md
+        - Universal (any rented/remote GPU) → references/run-remote/gotchas_universal.md
         - Platform-specific → that profile's §7
         - Training / DL → references/training/
     validations:

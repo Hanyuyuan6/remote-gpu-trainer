@@ -1,3 +1,5 @@
+> Applies to both local and remote runs.
+
 # Data-pipeline correctness — the silent mistrainers in the DataLoader, not the model
 
 `throughput-profiling.md` owns making the dataloader **fast**; this file owns making it **correct** — the
@@ -5,7 +7,7 @@ bugs that raise no error and let training "succeed" on the wrong data: augmentat
 vary, streams that duplicate across workers/GPUs, collate that crashes or mis-pads, and preprocessing that
 silently shifts the input distribution. Each entry is **Symptom → Root cause → Fix** with the exact knob.
 
-Boundary: **verifying-dl-experiments** owns the *judgement* "is this leakage / is the metric valid"; this
+Boundary: **references/verifying/methodology.md** owns the *judgement* "is this leakage / is the metric valid"; this
 file owns the *mechanism* (what the DataLoader / Dataset / transform actually did). When a data bug makes
 training "run but not learn," cross-check `convergence-debugging.md` — **O1 (overfit one batch)** isolates a
 broken loop from broken data.
@@ -19,7 +21,7 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 - **DataLoader worker RNG (the augmentation-duplication bug)** — DP1 numpy-RNG-duplicated-across-workers · DP2 IterableDataset-duplicated-workers+ranks · DP3 uneven-shard-DDP-hang
 - **Dataset / collate / DataLoader contract** — DP4 ragged-collate · DP5 pin_memory-custom-type · DP6 spawn-breaks-lambdas · DP7 wrong-__len__ · DP8 size-1-batch-kills-BN · DP9 in-RAM-cache-OOM · DP15 /dev/shm-Bus-error
 - **Input preprocessing / labels / shuffle** — DP10 norm-stats-space/split+RGB/BGR · DP11 cv2-BGR · DP12 ToTensor-no-÷255 · DP13 Normalize-before-ToTensor · DP14 shuffle/sampler + set_epoch
-- **Pointers** — throughput-profiling.md, convergence-debugging.md, distributed-launch.md, verifying-dl-experiments (skill)
+- **Pointers** — throughput-profiling.md, convergence-debugging.md, distributed-launch.md, references/verifying/methodology.md (skill)
 
 ---
 
@@ -81,7 +83,7 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 ### DP10 — Normalization applied in the wrong space/split, or stats mis-aligned to channel order → accuracy quietly tanks
 **Symptom**: the model loads and runs without error, but a pretrained backbone scores far below its reported number, or your own val accuracy is a few points under train for no obvious reason; predictions are systematically biased (reds↔blues confused if channel order is wrong).
 **Root cause**: the per-channel mean/std are correct numbers applied in the wrong space or order. (1) Stats must be computed on the **train split only** and reused verbatim at eval (the sklearn contract: `fit_transform` on train, `transform` — never `fit` — on test/whole set). (2) torchvision pretrained weights expect input already scaled to `[0,1]`, in **RGB**, then normalized with ImageNet `mean=[0.485,0.456,0.406]`/`std=[0.229,0.224,0.225]`. That mean vector is **RGB-indexed**, so feeding a BGR tensor (cv2 default, DP11) aligns the R-stat to the B channel.
-**Fix**: compute stats once on train and reuse the same constants/transform at eval. For a torchvision pretrained model don't hand-roll it — use `weights.transforms()` (e.g. `ResNet50_Weights.IMAGENET1K_V2.transforms()`), which bundles resize + to-`[0,1]` + RGB + the exact Normalize the weights were trained with. (The leakage *judgement* is owned by verifying-dl-experiments; this is the mechanism.) ([sklearn "Common pitfalls" — fit on train only](https://scikit-learn.org/stable/common_pitfalls.html), [torchvision models — input contract](https://docs.pytorch.org/vision/stable/models.html)) (extends V1.)
+**Fix**: compute stats once on train and reuse the same constants/transform at eval. For a torchvision pretrained model don't hand-roll it — use `weights.transforms()` (e.g. `ResNet50_Weights.IMAGENET1K_V2.transforms()`), which bundles resize + to-`[0,1]` + RGB + the exact Normalize the weights were trained with. (The leakage *judgement* is owned by references/verifying/methodology.md; this is the mechanism.) ([sklearn "Common pitfalls" — fit on train only](https://scikit-learn.org/stable/common_pitfalls.html), [torchvision models — input contract](https://docs.pytorch.org/vision/stable/models.html)) (extends V1.)
 
 ### DP11 — `cv2`-loaded image (BGR) fed to an RGB-trained model → channels swapped
 **Symptom**: a pipeline mixing `cv2` for I/O and a PIL/torchvision-trained (RGB) model: no exception, but color-sensitive predictions degrade; visualizing the array shows reds appearing blue. Often surfaces only when you switch the loader (PIL→cv2) and accuracy drops with zero logic change.
@@ -112,8 +114,8 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 
 ## Pointers — adjacent mechanics catalogued elsewhere
 
-- **Dataloader SPEED (num_workers / prefetch / pin-overlap / GPU-starvation)** → `references/training/throughput-profiling.md` (T4–T8), `references/gotchas_universal.md` (U8, U24).
+- **Dataloader SPEED (num_workers / prefetch / pin-overlap / GPU-starvation)** → `references/training/throughput-profiling.md` (T4–T8), `references/run-remote/gotchas_universal.md` (U8, U24).
 - **"Runs but won't learn" loop wiring + loss-function + label-form bugs** → `references/training/convergence-debugging.md` (O1 overfit-one-batch first; O14 CrossEntropyLoss target form).
 - **IterableDataset/DDP launch, `set_epoch` hang, SyncBatchNorm, uneven inputs** → `references/training/distributed-launch.md` (D9, D10, D22).
-- **Host-RAM OOM from worker fork-copy of a big startup tensor** → `references/gotchas_universal.md` (U9).
-- **Is the data leaking / is the metric valid / is the split contaminated** → **verifying-dl-experiments** (**REQUIRED** — owns the judgement; this file owns the mechanism).
+- **Host-RAM OOM from worker fork-copy of a big startup tensor** → `references/run-remote/gotchas_universal.md` (U9).
+- **Is the data leaking / is the metric valid / is the split contaminated** → **references/verifying/methodology.md** (**REQUIRED** — owns the judgement; this file owns the mechanism).

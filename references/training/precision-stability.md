@@ -1,9 +1,11 @@
+> Applies to both local and remote runs.
+
 # Numerical precision & training stability — make it RUN, then stop it diverging
 
 The mechanics of getting a DL run to compute *finite* numbers fast on a rented card, and of debugging it
 when the loss goes NaN or spikes. This layer owns **make-it-run + the mechanics of divergence**; it does
 NOT own *is the converged number real* / cuDNN-nondeterminism-as-a-metric-error — that is
-**verifying-dl-experiments** (cross-link **REQUIRED** at every "is this a bug or a real effect" fork).
+**references/verifying/methodology.md** (cross-link **REQUIRED** at every "is this a bug or a real effect" fork).
 
 To jump: `grep -in '<keyword>' references/training/precision-stability.md` (e.g. `tf32`, `bf16`, `scaler`,
 `nan`, `anomaly`, `z-loss`, `clip`, `warmup`, `qk`, `deterministic`).
@@ -233,7 +235,7 @@ divide-by-zero in a custom transform. The math is fine; the input is poison.
 **Fix**: guard at the data boundary — `assert torch.isfinite(x).all(), f"non-finite input @ step {step}"`
 (fail loud, with the index). A reproducible-step NaN ⇒ inspect *that batch* (seed the loader, dump the
 index); a *step-varying* NaN ⇒ a numerics/LR problem (P12), not data. Smoke the data first — smoke
-*content* is owned by **verifying-dl-experiments** (cross-link **REQUIRED**).
+*content* is owned by **references/verifying/methodology.md** (cross-link **REQUIRED**).
 URL: https://arxiv.org/pdf/2311.03938
 
 ---
@@ -380,8 +382,8 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False          # benchmark=True trades determinism for speed
 ```
 **Whether a run-to-run delta is "a real effect vs cuDNN nondeterminism," and the full determinism
-methodology, is owned by verifying-dl-experiments (cross-link REQUIRED)** — catalogued as **U36** in
-`references/gotchas_universal.md`. This layer only ensures the knobs are *set and logged*. Determinism costs
+methodology, is owned by references/verifying/methodology.md (cross-link REQUIRED)** — catalogued as **U36** in
+`references/run-remote/gotchas_universal.md`. This layer only ensures the knobs are *set and logged*. Determinism costs
 speed — enable for the datapoint that must be clean, not every throwaway run.
 URL: https://docs.pytorch.org/docs/stable/notes/randomness.html
 
@@ -389,13 +391,13 @@ URL: https://docs.pytorch.org/docs/stable/notes/randomness.html
 
 ## Pointers — adjacent layers, do NOT restate here
 
-- **`references/gotchas_universal.md`** — the *infra* failure modes that masquerade as numerics:
+- **`references/run-remote/gotchas_universal.md`** — the *infra* failure modes that masquerade as numerics:
   **U6** disk-full crashes `torch.save`, **U9** cgroup-OOM (bare `Killed`, not a NaN), **U28** CUDA/driver/
   torch-build mismatch (`no kernel image` ≠ a precision bug), **U10/U11** VRAM OOM. Rule out infra before
   chasing a "numerics" ghost.
-- **`verifying-dl-experiments`** (**REQUIRED** cross-link) — owns *is-the-number-real*: smoke **content**,
+- **`references/verifying/methodology.md`** (**REQUIRED** cross-link) — owns *is-the-number-real*: smoke **content**,
   cuDNN-nondeterminism-as-metric-error (U36), collapse/constant-output diagnosis, "bug vs real effect." This
   file makes training *run and stay finite*; that skill judges whether the converged result is *true*.
-- **`references/spot-resilience.md`** — checkpoint cadence so a divergence-and-resume (P12) loses minimal work.
-- **`references/multinode.md`** — NCCL/precision interactions in DDP (all-reduce dtype, loss-scale sync) for
+- **`references/run-remote/spot-resilience.md`** — checkpoint cadence so a divergence-and-resume (P12) loses minimal work.
+- **`references/run-remote/multinode.md`** — NCCL/precision interactions in DDP (all-reduce dtype, loss-scale sync) for
   multi-node runs; single-box users skip.

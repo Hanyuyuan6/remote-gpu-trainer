@@ -3,7 +3,7 @@
 Every `profiles/<platform>.md` describes ONE platform with the **same 8 sections in the same order**, so
 they are scannable and diffable. A profile owns all the *slow-changing, per-platform* substrate that the
 SKILL.md phases delegate to. It does **not** describe a specific job (that's the portable job request,
-below) and never repeats the universal gotchas (those live in `references/gotchas_universal.md` — link,
+below) and never repeats the universal gotchas (those live in `references/run-remote/gotchas_universal.md` — link,
 don't restate).
 
 Design rule borrowed from SkyPilot / dstack / Ray: **hardware is a CONSTRAINT, not a SKU.** A job asks
@@ -50,13 +50,13 @@ State region/DC-lock for any shared/network volume. Name the mount checkpoints M
 teardown verb in §5.
 
 ### 3. NETWORK
-Egress/proxy story, China-mirror relevance (link `references/china-network.md` if applicable), how
+Egress/proxy story, China-mirror relevance (link `references/run-remote/china-network.md` if applicable), how
 ports/services are exposed (TB/Jupyter), and the **SSH flavor(s)** — note if proxied/basic SSH cannot
 `scp`/`rsync` (then direct-TCP is required) and whether ports change on restart.
 
 ### 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 The interruption model (spot bid? capacity? auto-shutdown clock? auto-release?), the **detection signal +
-grace window**, and the resume hook. Link `references/spot-resilience.md` for the cadence formula.
+grace window**, and the resume hook. Link `references/run-remote/spot-resilience.md` for the cadence formula.
 
 ### 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
 Exactly **what stops the meter** (stop vs terminate vs destroy vs 关机), what each preserves, what is
@@ -87,7 +87,7 @@ Some profiles also surface connection facts like `SSH_USER` (e.g. Lambda's non-r
 ## Portable job request (NOT in the profile — keep it per-run)
 
 A job is described separately so the *same* job runs against any profile. Document it in
-`references/parallel_ablation.md`; the shape:
+`references/run-remote/parallel_ablation.md`; the shape:
 
 ```yaml
 resources:

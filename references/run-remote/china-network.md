@@ -7,9 +7,9 @@ training code. This file owns the CN-specific transport swap and stall-retry; **
 `huggingface-skills:hf-cli` owns the generic `hf download` / `hf upload` verbs underneath it.
 
 Universal gotchas (inode caps, silent sync, symlinked caches) are **not** restated here — see
-`references/gotchas_universal.md`. The AutoDL-pinned form lives in `profiles/autodl.md`.
+`references/run-remote/gotchas_universal.md`. The AutoDL-pinned form lives in `profiles/autodl.md`.
 
-To jump: `grep -in '<keyword>' references/china-network.md` (try `mirror`, `HF_ENDPOINT`, `hfd`,
+To jump: `grep -in '<keyword>' references/run-remote/china-network.md` (try `mirror`, `HF_ENDPOINT`, `hfd`,
 `no_proxy`, `hf_transfer`, `decision`).
 
 ## Table of contents

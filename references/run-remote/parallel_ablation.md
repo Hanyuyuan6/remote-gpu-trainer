@@ -6,7 +6,7 @@ isolated write path**; the discipline is **`superpowers:dispatching-parallel-age
 predicate + reconciliation**. **REQUIRED:** `superpowers:dispatching-parallel-agents` and
 **REQUIRED:** `superpowers:verification-before-completion`.
 
-To jump: `grep -in <keyword> references/parallel_ablation.md`.
+To jump: `grep -in <keyword> references/run-remote/parallel_ablation.md`.
 
 ## Table of contents
 
@@ -151,8 +151,8 @@ Reconcile and re-verify **every cell before any teardown** — this is a hard ga
    violation that slipped through — see Gotchas).
 3. **Re-verify by load.** Run `scripts/verify_local.py` over the durable copies — *load* each
    checkpoint and metrics file. "The file exists" / "the log said synced" is not evidence; a load
-   that succeeds is (principle #3, the `verifying-dl-experiments` boundary owns whether the *number*
-   is real — **REQUIRED:** `verifying-dl-experiments`).
+   that succeeds is (principle #3, the `references/verifying/methodology.md` boundary owns whether the *number*
+   is real — **REQUIRED:** `references/verifying/methodology.md`).
 4. **Remediate, never blind-retry.** Each missing/failed cell → classify the cause, then re-launch the
    **identical config** (principle #7) on a live instance via `start_index`, or append its line to a
    fresh queue. Do not patch one cell's config to make it pass — that destroys comparability.
@@ -192,5 +192,5 @@ it (don't delete) so indices stay stable, or start a fresh queue file for the re
 
 > Universal gotchas (SSH drop on `pkill`, CRLF, cgroup OOM, silent sync, inode exhaustion on
 > many-small-files eval output across a shared FS) are **not** restated here — see
-> `references/gotchas_universal.md`. Shared-FS inode pressure (principle #5) bites hardest exactly
+> `references/run-remote/gotchas_universal.md`. Shared-FS inode pressure (principle #5) bites hardest exactly
 > during fan-out, when N cells write eval artifacts to one FS at once.

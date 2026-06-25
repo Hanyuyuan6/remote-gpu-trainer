@@ -5,7 +5,7 @@ Purpose: a platform-parameterized, copy-pasteable checkbox runbook for one remot
 platform profile** (`profiles/<platform>.md`, 8-field schema in `profiles/_schema.md`) — this file never
 hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `SKILL.md`.
 
-`grep -in <keyword> references/lifecycle_checklist.md` to jump.
+`grep -in <keyword> references/run-remote/lifecycle_checklist.md` to jump.
 
 ## Table of contents
 - Phase −1 — one-time setup (skip if reused)
@@ -21,7 +21,7 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 > **How to use:** pick the profile FIRST (`SKILL.md` → "Pick your platform profile"). Wherever a step
 > says *profile data mount* / *profile durable mount* / *profile meter-stop verb* / *profile detach
 > primitive*, read the literal value out of that profile's STORAGE / TEARDOWN / DAEMON sections. Skip any
-> phase already done. Universal gotchas referenced by id live in `references/gotchas_universal.md` — not
+> phase already done. Universal gotchas referenced by id live in `references/run-remote/gotchas_universal.md` — not
 > restated here.
 
 ---
@@ -30,7 +30,7 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 - [ ] **First contact — surface the profile's "Surface to the user" block** to the user: the platform's non-obvious **conveniences** (one-click SSH-key registration, GPU-availability notifications, built-in panels) and its **danger clocks** (auto-release/auto-delete timers, stop-still-bills, low-balance purge). Don't assume they know — the danger clocks cost data or money (principle #10).
 - [ ] Local SSH keypair exists (`~/.ssh/id_ed25519`); public key registered with the platform.
-- [ ] `~/.ssh/config` alias per instance, with keepalive (`ServerAliveInterval`/`ServerAliveCountMax`) — see `references/ssh_transport.md`.
+- [ ] `~/.ssh/config` alias per instance, with keepalive (`ServerAliveInterval`/`ServerAliveCountMax`) — see `references/run-remote/ssh_transport.md`.
 - [ ] Durable storage provisioned per profile (shared FS / network volume / persistent disk), sized ≥ `ckpt_size × N + buffer`.
 - [ ] Reusable image/snapshot saved with the project's env + code, IF the profile supports it (saves repeated cold-build time × N instances).
 - [ ] `.gitattributes` sets `*.sh text eol=lf` so Windows-authored scripts don't ship CRLF (gotcha U26).
@@ -55,8 +55,8 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 - [ ] Set the SSH alias/env per the profile's NETWORK section; note the SSH flavor (a proxied/basic SSH may not `scp`/`rsync` — direct-TCP required; ports may change on restart).
 - [ ] Use the prebuilt image/base AS the env — do NOT `conda create` on a rental (throwaway-instance exception: the image IS the env).
-- [ ] Push secrets via **stdin, never onto a shared/durable FS** (a shared FS is multi-project) — pattern in `references/ssh_transport.md`. Reference creds by env-var NAME / file path, never inline a key.
-- [ ] If the profile sits behind the GFW, wire the China-mirror endpoint now (`references/china-network.md`); validate the speed test on the SAME route the real transfer uses (principle #7).
+- [ ] Push secrets via **stdin, never onto a shared/durable FS** (a shared FS is multi-project) — pattern in `references/run-remote/ssh_transport.md`. Reference creds by env-var NAME / file path, never inline a key.
+- [ ] If the profile sits behind the GFW, wire the China-mirror endpoint now (`references/run-remote/china-network.md`); validate the speed test on the SAME route the real transfer uses (principle #7).
 
 > **verify:** `ssh <alias> 'python -c "import torch;print(torch.cuda.is_available())"'` prints `True`.
 
@@ -66,8 +66,8 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 - [ ] Build an idempotent `run_one` / `run_queue` from `scripts/` (`run_one.sh.template`, `run_queue.sh.template`), parameterized from the profile's SCRIPT OVERRIDES (`DATA_DIR=`, `DURABLE_DIR=`, `PROXY_HOOK=`, `CRED_FILE=`, `SCRATCH=`, `HF_HOME=`, `DETACH=`).
 - [ ] Wrappers are resumable: load-latest-on-startup unconditionally so the identical launch command resumes, not restarts (principle #8).
-- [ ] Build the per-cell queue/config files with one isolated write path per cell (no shared mutable output — parallel ablation needs this; `references/parallel_ablation.md`).
-- [ ] **Run the cheap CPU smoke LOCALLY, BEFORE renting** — 1–2 batches, logger disabled, tiny shapes; it kills import/config/shape/scale bugs for ~free (principle #2). Smoke *content* → **verifying-dl-experiments** (REQUIRED).
+- [ ] Build the per-cell queue/config files with one isolated write path per cell (no shared mutable output — parallel ablation needs this; `references/run-remote/parallel_ablation.md`).
+- [ ] **Run the cheap CPU smoke LOCALLY, BEFORE renting** — 1–2 batches, logger disabled, tiny shapes; it kills import/config/shape/scale bugs for ~free (principle #2). Smoke *content* → **references/verifying/methodology.md** (REQUIRED).
 
 > **verify:** smoke exits 0 on 2 batches with the logger disabled, no Traceback.
 
@@ -85,7 +85,7 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 ## Phase 4 — Durable monitoring
 
-- [ ] For anything over ~1–2 h, deploy the **four-layer architecture** (`references/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels + recovery handbook. A session-bound watcher alone dies with the session (principle #3).
+- [ ] For anything over ~1–2 h, deploy the **four-layer architecture** (`references/run-remote/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels + recovery handbook. A session-bound watcher alone dies with the session (principle #3).
 - [ ] Use `run_in_background` (no duration cap, notifies on exit; a Claude Code primitive — other hosts map per `monitoring_patterns.md` §7) for long waits; never foreground-poll. NEVER an unquoted `|` inside a poll-regex — it reads stdin and hangs forever.
 - [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure).
 - [ ] Reconcile each watcher against the job's REAL process/artifact (`tmux ls`/`squeue`/`pgrep` + output `mtime`) — a watcher's own state is a claim, not ground truth (principle #3). Tear a watcher down when its job is superseded.
@@ -138,11 +138,11 @@ durable subscription LAST, only after the local copy is verified and the user ap
 ## Failure handling *(inline, any phase)*
 
 Categorize before reacting; retry the **identical** config — hand-patching one run destroys comparability
-(principle #7; **verifying-dl-experiments** owns is-it-a-bug-or-real).
+(principle #7; **references/verifying/methodology.md** owns is-it-a-bug-or-real).
 
 - [ ] **Probabilistic** (epoch-1 stall, transient `wandb.init` blip, spot preemption): queue a retry with the SAME config, no safeguards. Resume works because of checkpoint-load (principle #8).
 - [ ] **Disk-full** (exit 1 + `iostream` / "No space left"): prune the *profile scratch* (`SCRATCH=` — periodic checkpoints, unused caches), keep `best`; if cleanup can't free enough, **ask to expand the disk**, never silently shrink the experiment (principle #9). Then retry.
 - [ ] **Real bug** (CUDA OOM, code error, all-zero metric): stop, investigate code — do NOT retry blindly.
 
-> Symptom → root cause → fix for each, plus the full catalog: `references/gotchas_universal.md`
-> (`grep -in <keyword> references/gotchas_universal.md` to jump).
+> Symptom → root cause → fix for each, plus the full catalog: `references/run-remote/gotchas_universal.md`
+> (`grep -in <keyword> references/run-remote/gotchas_universal.md` to jump).
