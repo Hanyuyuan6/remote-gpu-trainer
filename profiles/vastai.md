@@ -313,14 +313,14 @@ egress-surcharge) live in `references/run-remote/gotchas_universal.md` — not r
   `gpu_name` can cover materially different cards — 40 GB and 80 GB A100 both appear under `A100 PCIE`-style
   names, and H100 SXM/PCIE/NVL variants blur; name-only matching (especially substring fallback) can't tell
   them apart. → Fix: treat `gpu_name` as a coarse filter only; verify actual VRAM and form factor on the box
-  with `nvidia-smi` before starting an expensive run. (verified 2026-06, observed on VaultLayer live runs)
+  with `nvidia-smi` before starting an expensive run. (verified 2026-06, observed on live multi-provider runs)
 - **VAST15 — `destroy` is eventually consistent; a 200 is not the final state.** Symptom: after `destroy`
   returns 200, follow-up reads keep returning the instance for a minute or more — easy to log a false
   teardown failure, or to read a still-visible object as "still billing." → Root cause: the show endpoint
   lags the destroy; it can still return the instance (sometimes `actual_status=exited`, or `instances=null`)
   before the final gone state. → Fix: after destroy (e.g. `DELETE /api/v0/instances/{id}/` — verify against
   current docs), poll and treat 404 / `destroyed` / `exited` / `instances=null` as terminal rather than
-  trusting the 200. (verified 2026-06, observed on VaultLayer live runs)
+  trusting the 200. (verified 2026-06, observed on live multi-provider runs)
 
 ### Platform-specific debugging (commands + what to check)
 

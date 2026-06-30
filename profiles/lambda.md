@@ -160,7 +160,7 @@ docs.lambda.ai/public-cloud/billing 2026-06).
 > shutdown -h now` or `sudo systemctl poweroff` … These commands will not work as expected and will cause
 > your instances to go into Alert status, and billing will continue"* (verified docs.lambda.ai 2026-06).
 > Also `halt` / `shutdown -P 0` only stop the OS, not the meter (DeepTalk staff). Stop the meter **only**
-> via `terminate` from the console or `POST /instance-operations/terminate` — which works even from inside
+> via `terminate` from the console or `POST /api/v1/instance-operations/terminate` — which works even from inside
 > the instance itself.
 
 What each action preserves:
@@ -216,7 +216,7 @@ is cheap. Cross-link: `superpowers:verification-before-completion` (REQUIRED) fo
 - **LAM3 — `sudo shutdown` / `poweroff` keeps the meter running (Alert state).**
   Symptom: instance "powered off" but the bill keeps climbing. → Root cause: an in-OS shutdown sends the
   instance to **Alert** without stopping billing; `halt`/`shutdown -P 0` only stop the OS, not the meter.
-  → Fix: stop the meter only via **terminate** (console or `POST /instance-operations/terminate`); never
+  → Fix: stop the meter only via **terminate** (console or `POST /api/v1/instance-operations/terminate`); never
   rely on an in-box poweroff. (billing doc + DeepTalk staff 2026-06)
 
 - **LAM4 — Per-instance firewall rulesets are immutable post-launch.**
@@ -295,10 +295,10 @@ is cheap. Cross-link: `superpowers:verification-before-completion` (REQUIRED) fo
   Symptom: a terminate request blocks indefinitely on a control-plane stall; because terminate is the
   meter-stop action, billing status is unresolved while the client waits; if the terminate did not land,
   the meter can keep running. → Root cause: the call (e.g.
-  `POST /instance-operations/terminate` — verify against current docs) has no inherent client deadline, so a
+  `POST /api/v1/instance-operations/terminate` — verify against current docs) has no inherent client deadline, so a
   stalled control plane never returns. → Fix: wrap terminate in a client-side timeout, then re-query
   instance state before retrying — don't block forever on the HTTP call, and don't blind-retry without first
-  checking whether the original call already took effect. (verified 2026-06, observed on VaultLayer live runs)
+  checking whether the original call already took effect. (verified 2026-06, observed on live multi-provider runs)
 
 ### Platform-specific debugging
 - **Confirm billing actually stopped:** after a teardown, check the instance is **gone** (not in *Alert*)
