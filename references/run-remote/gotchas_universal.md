@@ -98,7 +98,11 @@ it in that one command never executes.
 
 **Fix**: split — kill in one ssh call, relaunch (with NO kill) in the next. To stop a kill/poll pattern
 from matching the matcher's own command line, split the literal: `A=base; B=lines.; pgrep -f "${A}${B}"`
-(the contiguous string `baselines.` never appears in the cmdline running `pgrep`).
+(the contiguous string `baselines.` never appears in the cmdline running `pgrep`). **The same self-match
+also inflates a `pgrep -fc X` *count*** — it tallies your own `ssh …`/`grep X` too, so "N matches" is
+**not** evidence of N orphans (the classic false "orphans piled up → OOM" misread). Count real jobs via
+the split-literal above or `pgrep -af X` with your own PID dropped, and confirm any suspected OOM from
+`free`/`nvidia-smi`/the cgroup `oom_kill` counter (U41), not from a match count.
 
 ### U5 — Hook-safe remote launch: keep env activation VISIBLE in the launch command
 

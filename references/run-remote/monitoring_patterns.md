@@ -83,6 +83,12 @@ Non-negotiables baked in above:
 - **Detect "done" by a log MARKER, never by `pgrep`** of the waiter's own pattern — `pgrep -f` matches
   the waiter's own command line and the loop never ends. On a queue scheduler, `squeue -j <id>` going
   empty is the equivalent done-signal.
+- **Don't hammer a flapping link; back off, and don't read "can't connect" as "the box died."** The
+  ≥90 s tick above is already gentle — on a *failing* connection do NOT tighten the loop or tight-retry the
+  reconnect: a reconnect storm trips `sshd MaxStartups` (unauthenticated connections over the cap are
+  refused), a proxy/gateway rate-limit, or `fail2ban`, making the link *harder* to reach. Back off on a
+  failed tick (exponential, capped), and once back in, judge OOM/death from real resources (`free`,
+  `nvidia-smi`, the cgroup `oom_kill` counter — **U41**), never from connection refusals alone.
 
 Run this via `run_in_background` (fact 2: no cap, notifies on exit), or as a single foreground tick under
 the 600 s cap (fact 1). On a session scheduler use it as the L2 patrol body (§3). **Never foreground-poll
