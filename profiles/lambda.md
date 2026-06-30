@@ -291,6 +291,14 @@ is cheap. Cross-link: `superpowers:verification-before-completion` (REQUIRED) fo
   from the CUDA index `pip install torch --index-url https://download.pytorch.org/whl/cu128` (aarch64 GPU
   wheels live there), or compile from source for newer versions; relax exact pins. (DeepTalk GH200 thread
   + pytorch.org 2026-06)
+- **LAM14 — the terminate API call itself can hang; set a client-side timeout and re-check state.**
+  Symptom: a terminate request blocks indefinitely on a control-plane stall; because terminate is the
+  meter-stop action, billing status is unresolved while the client waits; if the terminate did not land,
+  the meter can keep running. → Root cause: the call (e.g.
+  `POST /instance-operations/terminate` — verify against current docs) has no inherent client deadline, so a
+  stalled control plane never returns. → Fix: wrap terminate in a client-side timeout, then re-query
+  instance state before retrying — don't block forever on the HTTP call, and don't blind-retry without first
+  checking whether the original call already took effect. (verified 2026-06, observed on VaultLayer live runs)
 
 ### Platform-specific debugging
 - **Confirm billing actually stopped:** after a teardown, check the instance is **gone** (not in *Alert*)

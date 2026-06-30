@@ -308,6 +308,19 @@ egress-surcharge) live in `references/run-remote/gotchas_universal.md` — not r
   1–5 min, longer for fat images) or the host link is slow. → Fix: wait out the documented window, then read
   `vastai show logs <id>` (below) for the pull progress; if still stuck, `destroy` and re-create on a faster
   offer with a slimmer image.
+- **VAST14 — `gpu_name` is a coarse filter, not a hardware guarantee.** Symptom: an offer selected by
+  `gpu_name` lands on a card with different VRAM / interconnect / price than intended. → Root cause: one
+  `gpu_name` can cover materially different cards — 40 GB and 80 GB A100 both appear under `A100 PCIE`-style
+  names, and H100 SXM/PCIE/NVL variants blur; name-only matching (especially substring fallback) can't tell
+  them apart. → Fix: treat `gpu_name` as a coarse filter only; verify actual VRAM and form factor on the box
+  with `nvidia-smi` before starting an expensive run. (verified 2026-06, observed on VaultLayer live runs)
+- **VAST15 — `destroy` is eventually consistent; a 200 is not the final state.** Symptom: after `destroy`
+  returns 200, follow-up reads keep returning the instance for a minute or more — easy to log a false
+  teardown failure, or to read a still-visible object as "still billing." → Root cause: the show endpoint
+  lags the destroy; it can still return the instance (sometimes `actual_status=exited`, or `instances=null`)
+  before the final gone state. → Fix: after destroy (e.g. `DELETE /api/v0/instances/{id}/` — verify against
+  current docs), poll and treat 404 / `destroyed` / `exited` / `instances=null` as terminal rather than
+  trusting the 200. (verified 2026-06, observed on VaultLayer live runs)
 
 ### Platform-specific debugging (commands + what to check)
 
