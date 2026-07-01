@@ -13,7 +13,7 @@ To jump: `grep -in '<keyword>' references/run-remote/monitoring_patterns.md`.
 - §0 Monitoring physics — the four facts every recipe rests on
 - §1 The robust short-connection ssh-poll template (the safe poll primitive)
 - §2 Quick health probes (one round-trip each)
-- §3 Durable monitoring architecture — the four layers (L1 self-completion · L2 patrol · L3 sentinels · L4 handbook)
+- §3 Durable monitoring architecture — the four layers (L1 self-completion · L2 heartbeat-fallback · L3 event-driven wake · L4 handbook)
 - §4 Stale-waiter hygiene — one waiter per live run, right lifetime
 - §5 Two-leg self-completion — guaranteed results + best-effort cadence
 - §6 Failure triage on the log
@@ -144,13 +144,17 @@ ssh "$HOST" "df -h '$DATA_MOUNT'; df -i '$DATA_MOUNT'"
 
 Session-bound watchers die with the session; the instance itself can die under the watcher; and a
 monitor that only speaks on terminal events reads as "nobody is watching." One layer cannot fix all
-three. Run four — **correctness in L1, liveness in L2, latency in L3, continuity in L4**:
+three. Run four — **correctness in L1, liveness in L2, latency in L3, continuity in L4**. **The primary
+wake signal is the L3 event-driven watcher** — on a harness-tracked background runner it auto-re-invokes
+you on completion, across an idle gap or a between-turns teardown; the **L2 timer patrol is only an
+optional heartbeat fallback** (a passive `ScheduleWakeup` no-ops when the agent is torn down between
+rounds), never the sole signal:
 
 | Layer | Lives where | Job | Survives |
 |---|---|---|---|
 | **L1 self-completion chain** | ON the box (tmux / nohup / sbatch dependency) | the work sequences itself: `until grep -q 'Training completed' log; do sleep 150; done && <next stage>`; stages hand off via `touch /path/STAGE_DONE` markers | session death, network loss |
-| **L2 patrol loop** | session scheduler (cron `/loop`) | every ~30 min fire a SELF-CONTAINED patrol: one combined ssh probe + a decision table + "report EVEN IF nothing changed" | idle gaps (NOT session death — see L4) |
-| **L3 event sentinels** | session background (`run_in_background`) | the §1 short-poll `until ssh test -f MARKER; …` for minute-level reaction between patrol ticks | nothing — acceptable; L1/L2 carry correctness |
+| **L2 patrol / heartbeat** | session scheduler (`/loop` + `ScheduleWakeup`, or cron) | OPTIONAL fallback, not the primary wake: periodically fire a SELF-CONTAINED patrol (combined ssh probe + decision table + "report EVEN IF nothing changed") to cover a watcher that hangs or never notifies | idle gaps — but no-ops if the agent is torn down at the deadline |
+| **L3 event-driven watcher** | session background (`run_in_background` / persistent `Monitor`) | PRIMARY wake: poll the real condition, exit ON the event, emit a completion notification; harness-tracked → auto-re-invokes across idle/teardown | idle/teardown (harness re-invokes on completion); re-arm one per resume |
 | **L4 recovery handbook** | persistent notes/memory | exact resume commands, chain definitions, marker paths, "first command on reconnect" — a BRAND-NEW session takes over from one word | everything |
 
 ### L1 — on-box self-completion chain (correctness)
@@ -171,7 +175,10 @@ nohup bash -c '
 > landed, the next stage ran on nothing. → Fix: `&&` between every stage and the final `touch`; detect
 > done by the marker, never by `pgrep` of the waiter's own pattern (fact 4 / §1).
 
-### L2 — patrol loop (liveness): the design checklist (what made it actually work)
+### L2 — patrol loop (liveness): an OPTIONAL heartbeat fallback, not the primary wake
+Bind this only as the heartbeat that covers an event-driven L3 watcher which hangs or never notifies — a
+passive `ScheduleWakeup`/cron re-fires only if the agent is alive at the deadline (see L3), so it is a
+safety net, not the wake you rely on. When you do run it, this checklist is what made it actually work:
 - **ONE combined ssh probe per tick** — alive-check (tmux ls / squeue / pgrep) + `*_DONE` markers + last
   epoch line + artifact `ls` + dataset file COUNTS, in a single round-trip.
 - **An explicit decision table**, e.g.: ssh down → tell the user to check the console (only they see
@@ -190,15 +197,24 @@ nohup bash -c '
 > escalation predicate, and a one-line report even when nothing changed — parameterized from the
 > profile's §8. Fire it from the host's recurring runner (§7: `/loop`, cron `3,33 * * * *`, …).
 
-### L3 — event sentinels (latency)
-The §1 short-poll loop for minute-level reaction between patrol ticks. Survives nothing — it is the
-disposable fast-reaction layer; L1/L2 carry correctness. Re-arm exactly ONE after any session resume.
+### L3 — event-driven watcher (latency + the PRIMARY wake signal)
+The §1 short-poll loop, run as a background job that **polls the real condition, exits ON the event, and
+emits a completion notification**. On a host whose background runner is **harness-tracked** (Claude Code's
+`run_in_background`, or a `persistent` `Monitor`), that exit **auto-re-invokes the agent across an idle gap
+or a between-turns teardown** — so this, NOT a timer, is the primary wake for a long external job: it fires
+the moment the event happens, leaves partial output to reconcile, and survives teardown. Re-arm exactly ONE
+after any session resume, and judge its mid-flight *state* against ground truth (L4) — the completion
+*event* is trustworthy, an in-progress progress claim is not.
 
-> **`run_in_background` is NOT a substitute for `/loop` on an unattended wait.** A one-shot
-> `run_in_background` sentinel notifies on EXIT — fine while you keep working in an ACTIVE session, but if
-> the session goes idle for hours its exit-notification lands on a closed/reset session and you hear
-> nothing (the silent-monitor-for-hours failure). Any UNATTENDED wait over ~1 h → bind the **L2 `/loop`
-> patrol** (a recurring agent re-wake), never a lone one-shot sentinel.
+> **Don't make a passive timer the primary wake — event-driven wins.** A self-paced loop that ends each
+> round with `ScheduleWakeup(N s)` silently stalls: `ScheduleWakeup` only re-fires if the agent process is
+> still alive at the deadline, so between rounds — idle or torn down — it **no-ops, leaves no artifact, and
+> has no fallback**, and the loop goes quiet until the user restarts it by hand. Put the "wait" in a
+> `run_in_background` watcher instead (poll the real condition → exit on the event → the harness
+> auto-re-invokes you on completion; it also leaves partial output and reconciles across teardown). Keep
+> timer wake-ups as an OPTIONAL heartbeat fallback only — a long `ScheduleWakeup` (≥1200 s) that fires *if*
+> the job hangs or never notifies — never as the sole signal. (Exactly what the `/loop` skill itself does:
+> prefer an event-driven `Monitor`, don't block on a `ScheduleWakeup` deadline.)
 
 ### L4 — recovery handbook (continuity)
 Persistent notes a brand-new session inherits from one word ("继续"): exact resume commands, the L1 chain
@@ -248,9 +264,12 @@ Two legs, never conflated:
 - **Leg 1 — remote self-completion (guaranteed, survives session/SSH death):** the L1 chain
   (`train → eval → touch marker` under one detach primitive). Detect done by a log/marker, never by
   `pgrep` of the waiter's own pattern. This guarantees RESULTS but gives no reporting cadence.
-- **Leg 2 — live progress (best-effort):** a session-bound patrol loop (L2, e.g. `/loop 30m` or cron `3,33 * * * *`)
-  polling with the LOCAL ssh key. Be honest it dies when the session closes — the remote still finishes;
-  the user re-pings to pull.
+- **Leg 2 — live progress (best-effort vs Leg 1):** the PRIMARY wake is an L3 event-driven watcher
+  (`run_in_background`, LOCAL ssh key) — it exits on the event and, being harness-tracked, auto-re-invokes
+  you on completion across an idle gap or teardown. Add an L2 timer patrol (`/loop 30m` / cron
+  `3,33 * * * *`) only as a heartbeat fallback for a watcher that hangs or never notifies. Leg 2 stays
+  best-effort *relative to Leg 1*: if the agent platform itself is down nothing on the agent side fires —
+  but the remote still finishes (Leg 1) and the user re-pings to pull.
 
 > **A cloud scheduler cannot reach a rented box.** A cloud schedule (`/schedule` / RemoteTrigger) runs in
 > an isolated sandbox with its own checkout and **no access to the local SSH key or network** → it cannot
@@ -311,9 +330,9 @@ the key must never be placed in one — secret-leak). Use cloud cron only to **r
 **poll a hosted tracker**, never to probe the box. The box-reaching poll must use the host's
 **local/session** runner (which holds your SSH key), or be the L1 on-box loop.
 
-| Agent host | Local runner — reaches the box (L3) | Recurring / loop (L2) | Cloud cron/automation — re-wake / tracker only | Foreground/turn limit |
+| Agent host | L3 event-driven watcher = PRIMARY wake (local runner, reaches the box) | L2 timer patrol = heartbeat fallback (recurring/loop) | Cloud cron/automation — re-wake / tracker only | Foreground/turn limit |
 |---|---|---|---|---|
-| **Claude Code** | `run_in_background` (detach + notify-on-exit); the `Monitor` tool | `/loop` + `ScheduleWakeup` (interval or self-paced) | `/schedule` (cron cloud agent) | ~600 s foreground |
+| **Claude Code** | `run_in_background` (detach + notify-on-exit → **auto-re-invokes across idle/teardown**, harness-tracked); the `Monitor` tool (`persistent`) | `/loop` + `ScheduleWakeup` — heartbeat only (a passive timer no-ops if torn down at the deadline; keep a long ≥1200 s one as a hang fallback) | `/schedule` (cron cloud agent) | ~600 s foreground |
 | **OpenAI Codex** | Codex Cloud background tasks (async, parallel) | a thread that schedules its own wake-up | **Automations** — cron syntax, results → review queue | per cloud task |
 | **Cursor** | Background Agents (async) | — | **Automations** — cron (hourly/daily/weekly) + event triggers | per agent |
 | **Trae** (ByteDance) | Agent / `trae-agent` CLI unattended runs; CI/CD | via a CI/CD pipeline | **no native cron found** → external cron / CI-CD, or rely on Rule 1 | per run |
@@ -323,11 +342,16 @@ the key must never be placed in one — secret-leak). Use cloud cron only to **r
 
 > **Hosts not in the table** (VS Code / Copilot, Goose, Kiro, …) take the **Generic** row until they expose a local recurring runner that holds your SSH key — until then, wire **Rule 1** (the on-box self-push) and let the agent pull on its next turn.
 
-**Binding the layers:** L1 is unchanged everywhere (on-box). Bind **L2** to the host's local recurring
-runner *if* it reaches the box, else to the box's own `cron`/`at` + a push (Rule 1). Bind **L3** to the
-host's local background runner, re-armed once per resume. When a host offers only cloud automation (or
-nothing), **do not promise agent-side polling of the box** — wire Rule 1 and let the agent pull on its
-next turn (§0 corollary: trust the artifact, not the silence).
+**Binding the layers:** L1 is unchanged everywhere (on-box). Make **L3 the primary wake** — bind it to the
+host's local background runner *if that runner is harness-tracked and re-invokes the agent on completion*
+(Claude Code's `run_in_background` / `Monitor` are; verify per host), re-armed once per resume. Bind **L2**
+(timer patrol) as the OPTIONAL heartbeat fallback for a watcher that hangs, on the host's recurring runner
+if it reaches the box, else the box's own `cron`/`at` + a push (Rule 1). Where a host's background runner
+does NOT auto-re-invoke on completion, L2 carries more weight — but a passive wake-up (Claude Code
+`ScheduleWakeup`, a self-scheduled thread) that fires only if the agent is alive at the deadline is a
+fallback, never the sole signal. When a host offers only cloud automation (or nothing), **do not promise
+agent-side polling of the box** — wire Rule 1 and let the agent pull on its next turn (§0 corollary: trust
+the artifact, not the silence).
 
 Host capabilities verified 2026-06: Codex Automations (cron) + Cloud background tasks —
 `developers.openai.com/codex/app/automations` + `/codex/cloud`; Cursor Automations (cron + event
