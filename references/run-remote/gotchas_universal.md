@@ -138,6 +138,13 @@ the mount, schedule mid-run aggregation to durable storage + delete completed-an
 references/verifying/methodology.md **REQUIRED** for the keepable-checkpoint policy). **Recover**: delete the
 `*.tmp`/`latest.pth` to free several GB — `best.pth` survives, the queue can resume.
 
+**The budget check must be a GATE, not a log line.** A launch script that *prints* `df` but never *aborts*
+on it will watch the disk die mid-queue — e.g. `best`+`latest` at ~2.5 GB each × 3 seeds eats a 17 GB
+margin, the `df` line prints *after* the write already failed, the script marches on, and every downstream
+run crashes in turn. Gate it before every invocation:
+`free=$(df --output=avail -BG <mount> | tail -1 | tr -dc 0-9); [ "$free" -lt <floor> ] && { echo DISK_GATE_ABORT; exit 3; }`
+— and prune between invocations when runs are batched.
+
 ### U7 — Storage fails on the dimension (and location) not being watched
 
 **Symptom**: `cp`/`mkdir` fails `No space left on device`, yet `df -h` shows ~34% used — because `df -i`

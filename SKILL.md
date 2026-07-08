@@ -191,7 +191,9 @@ fully standalone. One-line-each list, what each adds, and the no-companion fallb
 **`references/companions.md`**. In short: figure drawing (nature-figure / publication-chart / scipilot-figure),
 experiment verification (the `experiment-verifier` agent), parallel ablation
 (`superpowers:dispatching-parallel-agents`), HF transport + hosted tracker
-(`huggingface-skills:hf-cli` / `huggingface-trackio`).
+(`huggingface-skills:hf-cli` / `huggingface-trackio`), and — one layer above — an idea→conclusion
+orchestrator (`auto-research-pipeline`: human gates + stage wiring; this skill executes, that one decides
+when each stage fires and what a human signs).
 
 ## Getting better over time
 

@@ -293,6 +293,12 @@ else:
     skipped += 1
 ```
 Log a `skipped` counter — a *rising* skip rate means a systematic problem (P12/P10), not stray bad data.
+**Tell a *data* spike from an *optimizer-state* one by replay:** re-run the same batches from an *earlier*
+checkpoint — if the spike does **not** reproduce, it is a state interaction, not dirty data, so roll back
+(~100 steps) and skip those batches rather than blaming the data ([PaLM §5.1](https://arxiv.org/abs/2204.02311)
+saw ~20 such spikes, none reproducing on replay). If a spike resists all of the above, suspect fp16 *range*:
+BLOOM's 104B fp16 pretraining diverged irrecoverably where the 176B **bf16** run stayed stable — prefer bf16
+([BLOOM §3.4.3](https://arxiv.org/abs/2211.05100)).
 Adaptive spike-clipping (ZClip) and momentum-reset on spike (SPAM) automate this for large runs. URLs:
 https://arxiv.org/pdf/2504.02507 · https://arxiv.org/pdf/2501.06842
 

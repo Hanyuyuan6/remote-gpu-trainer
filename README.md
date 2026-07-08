@@ -8,10 +8,10 @@ a fan-out of many), now wrapped in the full run → verify → deliver arc.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-SKILL.md-blue)](https://agentskills.io)
-[![agentskills validate](https://img.shields.io/badge/agentskills%20validate-passing-brightgreen)](https://agentskills.io/specification)
+[![evals](https://img.shields.io/badge/evals-15%2F15%20reachable-brightgreen)](evals/RESULTS.md)
 [![Lifecycle](https://img.shields.io/badge/lifecycle-RUN%20%C2%B7%20VERIFY%20%C2%B7%20DELIVER-blueviolet)](#whats-inside)
 [![Platform profiles](https://img.shields.io/badge/platform%20profiles-8-orange)](#whats-inside)
-[![Status](https://img.shields.io/badge/status-pre--release-yellow)](#verification-status)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/Hanyuyuan6/remote-gpu-trainer/releases/tag/v1.0.0)
 
 > **What this is, and what it isn't.** "AutoDL" here means the [autodl.com](https://www.autodl.com)
 > GPU-rental platform, not AutoML or NAS. And this is an Agent Skill — a `SKILL.md` with reference docs and
@@ -171,7 +171,7 @@ git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.claude/skills/
 **OpenAI Codex**
 
 ```bash
-git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.agents/skills/remote-gpu-trainer
+git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.codex/skills/remote-gpu-trainer
 ```
 
 **Cursor · Trae · Gemini CLI · VS Code / Copilot · Goose · Kiro · other compatible agents**
@@ -183,7 +183,7 @@ standard, so the folder works unchanged across them.
 **Verify the install (optional).** With [uv](https://github.com/astral-sh/uv):
 
 ```bash
-uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill"
+uvx skills-ref validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill" (the official Agent Skills validator)
 ```
 
 > **Two caveats.** The optional companion skills it cross-links (`nature-figure`, `experiment-verifier`,
