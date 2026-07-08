@@ -36,7 +36,8 @@ scenario's `must_cover` points within ~2 hops.
 
 **Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
 correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs all 15
-cases and is the regression guard kept green in CI.
+cases and, together with `scripts/test_reconcile.py`, is the regression guard CI runs on every push / PR
+(`.github/workflows/evals.yml` — pure stdlib, no secrets).
 
 ## Known gaps (what these results do NOT yet cover)
 
