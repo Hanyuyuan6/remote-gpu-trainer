@@ -234,7 +234,10 @@ divide-by-zero in a custom transform. The math is fine; the input is poison.
 
 **Fix**: guard at the data boundary — `assert torch.isfinite(x).all(), f"non-finite input @ step {step}"`
 (fail loud, with the index). A reproducible-step NaN ⇒ inspect *that batch* (seed the loader, dump the
-index); a *step-varying* NaN ⇒ a numerics/LR problem (P12), not data. Smoke the data first — smoke
+index); a *step-varying* NaN ⇒ a numerics/LR problem (P12), not data. And to separate a *data* spike from an
+*optimizer-state* one — the harder fork, since a poison batch and a momentum-state interaction can look alike —
+apply the **replay diagnostic (P14)**: re-run the same batches from an *earlier* checkpoint; if the spike does
+not reproduce, it is state, not data. Smoke the data first — smoke
 *content* is owned by **references/verifying/methodology.md** (cross-link **REQUIRED**).
 URL: https://arxiv.org/pdf/2311.03938
 
