@@ -1,3 +1,19 @@
+---
+platform: autodl
+kind: ssh-rental
+meter_stop_verb: 关机           # shutdown/power-off STOPS billing AND keeps /root + disks
+meter_stop_irreversible: false  # the AutoDL EXCEPTION — 关机 is reversible; only 释放/release deletes
+detach_primitive: tmux          # nohup fallback when tmux is not installed (often absent on fresh image)
+spot_available: false           # on-demand only; no spot/bid/preemption model
+spot_grace: n/a
+shared_fs: true                 # /root/autodl-fs — region-locked, cross-instance within one region
+inode_cap: ~200K                # hard cap on the shared FS, independent of byte capacity
+free_egress: true               # no per-GB egress fee, but cross-GFW pulls need the academic proxy (see china_mirror_needed)
+china_mirror_needed: true       # behind the GFW — hf-mirror / ModelScope + /etc/network_turbo
+host_driver_cuda_max: image-dependent   # the prebuilt image pins torch+CUDA; do not downgrade (AD9)
+local_nvme: true                # /root/autodl-tmp data disk is fast local NVMe, per-instance
+---
+
 # Profile: AutoDL
 
 The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with a 3-tier storage model
@@ -25,26 +41,6 @@ To jump: `grep -in '<keyword>' profiles/autodl.md` (e.g. `grep -in inode profile
 6. DAEMON TOOL — tmux / nohup
 7. TOP GOTCHAS — AD1..AD9, platform-pinned
 8. SCRIPT OVERRIDES — values to parameterize `scripts/`
-
----
-
-```yaml
----
-platform: autodl
-kind: ssh-rental
-meter_stop_verb: 关机           # shutdown/power-off STOPS billing AND keeps /root + disks
-meter_stop_irreversible: false  # the AutoDL EXCEPTION — 关机 is reversible; only 释放/release deletes
-detach_primitive: tmux          # nohup fallback when tmux is not installed (often absent on fresh image)
-spot_available: false           # on-demand only; no spot/bid/preemption model
-spot_grace: n/a
-shared_fs: true                 # /root/autodl-fs — region-locked, cross-instance within one region
-inode_cap: ~200K                # hard cap on the shared FS, independent of byte capacity
-free_egress: true               # no per-GB egress fee, but cross-GFW pulls need the academic proxy (see china_mirror_needed)
-china_mirror_needed: true       # behind the GFW — hf-mirror / ModelScope + /etc/network_turbo
-host_driver_cuda_max: image-dependent   # the prebuilt image pins torch+CUDA; do not downgrade (AD9)
-local_nvme: true                # /root/autodl-tmp data disk is fast local NVMe, per-instance
----
-```
 
 ---
 

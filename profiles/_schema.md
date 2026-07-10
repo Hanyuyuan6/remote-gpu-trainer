@@ -1,7 +1,9 @@
 # Platform Profile Schema
 
 Every `profiles/<platform>.md` describes ONE platform with the **same 8 sections in the same order**, so
-they are scannable and diffable. A profile owns all the *slow-changing, per-platform* substrate that the
+they are scannable and diffable. (One sanctioned exception: a *family* profile covering several near-clone
+platforms — e.g. `china.md` — may append a per-platform comparison section after §8; the 8 core sections
+stay fixed and in order.) A profile owns all the *slow-changing, per-platform* substrate that the
 SKILL.md phases delegate to. It does **not** describe a specific job (that's the portable job request,
 below) and never repeats the universal gotchas (those live in `references/run-remote/gotchas_universal.md` — link,
 don't restate).

@@ -8,7 +8,7 @@ a fan-out of many), now wrapped in the full run → verify → deliver arc.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-SKILL.md-blue)](https://agentskills.io)
-[![evals](https://img.shields.io/badge/evals-15%2F15%20reachable-brightgreen)](evals/RESULTS.md)
+[![evals](https://img.shields.io/badge/evals-18%2F18%20reachable-brightgreen)](evals/RESULTS.md)
 [![Lifecycle](https://img.shields.io/badge/lifecycle-RUN%20%C2%B7%20VERIFY%20%C2%B7%20DELIVER-blueviolet)](#whats-inside)
 [![Platform profiles](https://img.shields.io/badge/platform%20profiles-8-orange)](#whats-inside)
 [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/Hanyuyuan6/remote-gpu-trainer/releases/tag/v1.0.0)

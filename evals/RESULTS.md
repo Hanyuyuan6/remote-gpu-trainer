@@ -35,8 +35,11 @@ scenario's `must_cover` points within ~2 hops.
 | result-validity-report-gate | **PASS** | 2 | SKILL.md VERIFY → `references/verifying/methodology.md` §1 (control-diff bug/effect/noise) + §9 (≥3-seed mean±std) + §4 (leakage normcase/same-bytes) + §14 (re-derive before report) |
 
 **Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
-correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs all 15
-cases and, together with `scripts/test_reconcile.py`, is the regression guard CI runs on every push / PR
+correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) now runs **18**
+cases — the 15 agentic-validated scenarios above plus 3 guards added 2026-07 for newer load-bearing
+content (spike replay-diagnostic P14, determinism-audit + knob cross-links, U6 disk-budget gate; the
+first two carry their own blind old-vs-new agentic PASS, the third is structural-only so far) — and,
+together with `scripts/test_reconcile.py`, is the regression guard CI runs on every push / PR
 (`.github/workflows/evals.yml` — pure stdlib, no secrets).
 
 ## Known gaps (what these results do NOT yet cover)
