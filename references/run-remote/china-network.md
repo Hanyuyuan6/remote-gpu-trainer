@@ -3,8 +3,9 @@
 Universal recipe for pulling code, packages, and model weights onto **any GPU box behind the GFW** —
 AutoDL, 矩池云, 恒源云, Featurize, 揽睿星舟, or a bare CN SSH instance. The whole problem reduces to **four
 orthogonal env-var switches** (mirror, cache location, resume tier, proxy scope); none requires editing
-training code. This file owns the CN-specific transport swap and stall-retry; **REQUIRED:**
-`huggingface-skills:hf-cli` owns the generic `hf download` / `hf upload` verbs underneath it.
+training code. This file owns the CN-specific transport swap and stall-retry. If
+`huggingface-skills:hf-cli` is installed, use it for the generic `hf download` / `hf upload` verbs;
+otherwise run the equivalent `hf` CLI commands shown here directly.
 
 Universal gotchas (inode caps, silent sync, symlinked caches) are **not** restated here — see
 `references/run-remote/gotchas_universal.md`. The AutoDL-pinned form lives in `profiles/autodl.md`.
@@ -102,8 +103,9 @@ for _ in $(seq 1 20); do
 done
 ```
 
-(Underlying verbs — `hf download --resume-download`, `hf cache verify` — belong to **REQUIRED:**
-`huggingface-skills:hf-cli`; this ladder only wraps them with CN-mirror routing + stall-retry.)
+(Underlying verbs are `hf download --resume-download` and `hf cache verify`; an installed
+`huggingface-skills:hf-cli` may supply them, while this self-contained ladder wraps them with
+CN-mirror routing + stall-retry.)
 
 **Tier 2 — `hfd.sh` (aria2 multi-connection) for any single file > 10 GB.**
 `hfd.sh` (the HF-Mirror companion script) drives `aria2c` with many parallel connections per file —

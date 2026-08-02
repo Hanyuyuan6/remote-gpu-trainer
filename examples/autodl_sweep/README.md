@@ -44,7 +44,7 @@ python -m src.train -c configs/ablation/baseline.yaml --task reconstruction \
 ### Phase 3 — Detached launch
 ```bash
 # Push the parameterized wrappers + queue to the shared FS (ONE copy, all instances read it):
-scp run_one.sh run_queue.sh scripts/aggregate_to_fs.sh examples/autodl_sweep/queue_1.txt autodl-1:/root/autodl-fs/
+scp run_one.sh run_queue.sh scripts/aggregate_to_fs.sh scripts/build_pull_manifest.py examples/autodl_sweep/queue_1.txt autodl-1:/root/autodl-fs/
 ssh autodl-1 "RUN_ONE=/root/autodl-fs/run_one.sh tmux new -d -s q1 \
   'bash /root/autodl-fs/run_queue.sh /root/autodl-fs/queue_1.txt 2>&1 | tee /root/autodl-tmp/runs/logs/q1_master.log'"
 ```
@@ -61,12 +61,19 @@ early-stop) and re-launch the **identical** config (principle #7), never a patch
 
 ### Phase 5 — Aggregate + verify + teardown
 ```bash
-ssh autodl-1 'DATA_DIR=/root/autodl-tmp DURABLE_DIR=/root/autodl-fs bash /root/autodl-fs/aggregate_to_fs.sh'  # gated sync (U33)
+# The roster is an explicit expected-output contract, not inferred from whatever happens to exist remotely.
+printf '%s\n' baseline aug_color no_aux > expected_roster.txt
+scp expected_roster.txt autodl-1:/root/autodl-fs/
+ssh autodl-1 'DATA_DIR=/root/autodl-tmp DURABLE_DIR=/root/autodl-fs \
+  RUN_ID=paper-ablation-v1 EXPECTED_ROSTER_FILE=/root/autodl-fs/expected_roster.txt \
+  bash /root/autodl-fs/aggregate_to_fs.sh'
 LOCAL_TARGET=/path/to/local/final_ckpts REMOTE_ALIAS=autodl-1 \
   REMOTE_PATH=/root/autodl-fs/final_ckpts bash scripts/download_loop.sh        # resumable per-dir pull
 python scripts/verify_local.py /path/to/local/final_ckpts/                     # LOAD each best.pth
 ```
-**Verify:** `verify_local.py` reports 100% OK. **Iron Law:** only AFTER every cell is pulled AND
-load-verified AND the user approves does teardown run — on AutoDL `关机` stops the meter and keeps the
+**Verify:** the download loop ends with `PULL VERIFIED` and writes `PULL_VERIFIED.json`; this proves the
+explicit roster, every size/hash, and every checkpoint load. **Iron Law:** only AFTER that marker exists
+AND the user approves does teardown run — on AutoDL `关机` stops the meter and keeps the
 disk (the reversible exception); `release` frees it irreversibly. Reconcile against the roster, not the
-log (`references/run-remote/parallel_ablation.md` §6). **REQUIRED:** `superpowers:verification-before-completion`.
+log (`references/run-remote/parallel_ablation.md` §6). Use a separate verification companion when installed;
+otherwise the bundled manifest gate is authoritative.

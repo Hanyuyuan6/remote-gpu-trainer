@@ -175,6 +175,39 @@ nohup bash -c '
 > landed, the next stage ran on nothing. → Fix: `&&` between every stage and the final `touch`; detect
 > done by the marker, never by `pgrep` of the waiter's own pattern (fact 4 / §1).
 
+> ⚠️ **Gotcha — never gate on a string the PAYLOAD prints; gate on an artifact, or on a marker YOUR
+> wrapper writes.** The `until grep -q "Training completed" train.log` above is convenient but it trusts
+> the trainee to emit its own last line. **Measured failure (2026-07-22, cost ≈12 h × 2 boxes):** two runs
+> completed all 100 epochs and wrote 442 MB `best.pth` + `metrics.json` + tfevents, yet **exited without
+> ever emitting that final line** (one died at teardown, one hung in DataLoader-worker join with the GPU
+> idle). The gate string could never arrive, so the downstream queue waited forever — and the crash-scan
+> stayed quiet because it greps `Traceback|OOM|Killed` and **a stall is not a crash: it leaves no
+> signature at all.**
+> - **Gate on what the work produces** (`best.pth`, a result JSON) **or on a marker your own `&&`-chain
+>   touches after the command returns.** Both are under your control; the payload's stdout is not.
+> - **Bound every wait**: `until [ -f "$ART" ] || [ $waited -ge $MAX ]` … then proceed-and-warn. An
+>   unbounded `until` turns one bad assumption into indefinite idle billing.
+> - **Gate predicate and alarm predicate must be INDEPENDENT.** In that incident the runner's gate and the
+>   watcher's completion test were the *same* `grep "Training finished"` — one wrong assumption took out
+>   the work **and** its alarm together. Gate on the artifact; alarm on **liveness** (L2: newest-log mtime
+>   age, GPU util, trainer-process count). **If your watcher would print nothing while the box sits
+>   silent-but-alive, it is not a monitor.**
+
+> ⚠️ **Root cause behind both halves — a log is append-only history; it cannot answer "what is true
+> NOW".** Two failures one hour apart, same disease, opposite symptoms:
+> - waited on a string that **never arrives** (payload exited without printing its last line) → infinite wait;
+> - decided "finished" from `grep -c "QUEUE COMPLETE"` over the **cumulative** runner log → once a queue
+>   completed, that marker lives forever, so the same box **given fresh work still reads as done** and
+>   silently drops out of monitoring.
+>
+> **Rule:** a log proves *something happened once*; it never proves *the current state*. Ask live things
+> for live state — process/session presence (`pgrep`, `tmux ls`, `squeue`), file **mtime age**, GPU util —
+> and use the log only for the **last line** (current) or for a **count you compare against a previously
+> seen count** (delta), never for a bare "does this string exist anywhere".
+> Working predicate: `finished = (no session AND no process) AND (last log line says complete)`;
+> `dead = (no session AND no process) AND (last line does NOT say complete)`; `stalled = alive BUT newest
+> log mtime older than N min`. All three are distinguishable; a cumulative grep collapses them into one.
+
 ### L2 — patrol loop (liveness): an OPTIONAL heartbeat fallback, not the primary wake
 Bind this only as the heartbeat that covers an event-driven L3 watcher which hangs or never notifies — a
 passive `ScheduleWakeup`/cron re-fires only if the agent is alive at the deadline (see L3), so it is a
@@ -244,9 +277,11 @@ definition, every marker path, the "first command on reconnect." Two durable har
 > `until ssh grep MARKER; do sleep 20; done` waiter but never stopped the OLD one — its marker (in a
 > superseded log) never appears, so it loops forever (fact 3). → Fix below.
 
-- **One waiter per live run.** Superseding a run → STOP its old waiter *first* (TaskStop, or dismiss a
-  cross-session chip from the UI — resumed-session IDs aren't stoppable programmatically).
-- **Match watcher lifetime to the wait.** Multi-hour wait → a persistent Monitor (no 10-min cap) plus a
+- **One waiter per live run.** Superseding a run → cancel its old waiter with the current host's
+  watcher/task-control capability first (Claude Code: `TaskStop` or dismiss the task chip; other hosts:
+  use their actual cancellation mechanism, never assume the Claude primitive exists).
+- **Match watcher lifetime to the wait.** Multi-hour wait → a persistent local watcher when the host
+  truly provides one (Claude Code: persistent `Monitor`) plus a
   stall-detector so a hung run still notifies. A persistent monitor still dies on session resume → after
   any resume, **check remote ground truth directly** (tmux ls / squeue, `grep DONE log`, `nvidia-smi`);
   do not trust a watcher that may be gone (fact 3 + §0 corollary).
@@ -333,7 +368,7 @@ the key must never be placed in one — secret-leak). Use cloud cron only to **r
 | Agent host | L3 event-driven watcher = PRIMARY wake (local runner, reaches the box) | L2 timer patrol = heartbeat fallback (recurring/loop) | Cloud cron/automation — re-wake / tracker only | Foreground/turn limit |
 |---|---|---|---|---|
 | **Claude Code** | `run_in_background` (detach + notify-on-exit → **auto-re-invokes across idle/teardown**, harness-tracked); the `Monitor` tool (`persistent`) | `/loop` + `ScheduleWakeup` — heartbeat only (a passive timer no-ops if torn down at the deadline; keep a long ≥1200 s one as a hang fallback) | `/schedule` (cron cloud agent) | ~600 s foreground |
-| **OpenAI Codex** | Codex Cloud background tasks (async, parallel) | a thread that schedules its own wake-up | **Automations** — cron syntax, results → review queue | per cloud task |
+| **OpenAI Codex** | A local Codex app/CLI task or terminal helper only when it runs on the key-holding machine; otherwise none | no local timer assumed; prefer on-box self-push | **Cloud tasks / Automations** — re-wake or poll a hosted tracker only; never SSH with a local key | per task |
 | **Cursor** | Background Agents (async) | — | **Automations** — cron (hourly/daily/weekly) + event triggers | per agent |
 | **Trae** (ByteDance) | Agent / `trae-agent` CLI unattended runs; CI/CD | via a CI/CD pipeline | **no native cron found** → external cron / CI-CD, or rely on Rule 1 | per run |
 | **Google Antigravity** | background / parallel subagents (desktop) | **Scheduled Tasks** (cron) + `/schedule` | Scheduled Tasks — Rule 2: verify local-vs-sandbox before trusting box-reach | `/schedule` one-time ≤15 min |
@@ -344,7 +379,8 @@ the key must never be placed in one — secret-leak). Use cloud cron only to **r
 
 **Binding the layers:** L1 is unchanged everywhere (on-box). Make **L3 the primary wake** — bind it to the
 host's local background runner *if that runner is harness-tracked and re-invokes the agent on completion*
-(Claude Code's `run_in_background` / `Monitor` are; verify per host), re-armed once per resume. Bind **L2**
+(Claude Code's `run_in_background` / `Monitor` are; a local Codex task must be verified on the actual
+key-holding machine), re-armed once per resume. Bind **L2**
 (timer patrol) as the OPTIONAL heartbeat fallback for a watcher that hangs, on the host's recurring runner
 if it reaches the box, else the box's own `cron`/`at` + a push (Rule 1). Where a host's background runner
 does NOT auto-re-invoke on completion, L2 carries more weight — but a passive wake-up (Claude Code

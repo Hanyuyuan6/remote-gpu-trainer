@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify integrity of downloaded ckpt directories.
+"""Verify integrity and remote provenance of downloaded checkpoint directories.
 
 For each <name>/ in the target dir, check:
   - best.pth exists
@@ -8,8 +8,12 @@ For each <name>/ in the target dir, check:
   - best_metrics.json exists and is valid JSON
   - reports best epoch + main metric per ablation
 
+The default teardown gate requires ``PULL_MANIFEST.json`` in the result root.
+That manifest binds an immutable run id to the exact remote roster, sizes, and
+SHA-256 digests.  Success writes ``PULL_VERIFIED.json`` beside the data.
+
 Usage:
-    python verify_local.py <path_to_final_ckpts_dir> [--expect N] [--list-metrics]
+    python verify_local.py <path_to_final_ckpts_dir> [--manifest PATH] [--expect N] [--list-metrics]
 
 Exit code:
     0 = all OK
@@ -17,9 +21,108 @@ Exit code:
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+MANIFEST_SCHEMA = "remote-gpu-trainer/PULL/v1"
+MANIFEST_NAME = "PULL_MANIFEST.json"
+VERIFICATION_NAME = "PULL_VERIFIED.json"
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_manifest(root: Path, manifest_path: Path) -> tuple[dict | None, list[str]]:
+    """Validate schema, exact roster, sizes, and digests before loading checkpoints."""
+    errors: list[str] = []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return None, [f"manifest unreadable: {exc}"]
+
+    if not isinstance(manifest, dict) or manifest.get("schema") != MANIFEST_SCHEMA:
+        errors.append(f"manifest schema must be {MANIFEST_SCHEMA!r}")
+    if not isinstance(manifest.get("run_id"), str) or not manifest["run_id"].strip():
+        errors.append("manifest run_id must be a non-empty string")
+
+    entries = manifest.get("files")
+    if not isinstance(entries, list) or not entries:
+        errors.append("manifest files must be a non-empty list")
+        return manifest, errors
+
+    expected: dict[str, dict] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            errors.append(f"manifest files[{index}] is not an object")
+            continue
+        relative = entry.get("path")
+        if not isinstance(relative, str) or not relative or relative.startswith(("/", "\\")) or ".." in Path(relative).parts:
+            errors.append(f"manifest files[{index}] has an unsafe path")
+            continue
+        normalized = Path(relative).as_posix()
+        if normalized in expected:
+            errors.append(f"manifest contains duplicate path: {normalized}")
+            continue
+        expected[normalized] = entry
+
+    ignored = {manifest_path.resolve(), (root / VERIFICATION_NAME).resolve()}
+    actual = {
+        path.relative_to(root).as_posix(): path
+        for path in root.rglob("*")
+        if path.is_file() and path.resolve() not in ignored and not path.name.endswith(".tmp")
+    }
+    missing = sorted(set(expected) - set(actual))
+    unexpected = sorted(set(actual) - set(expected))
+    errors.extend(f"manifest file missing locally: {path}" for path in missing)
+    errors.extend(f"unexpected local file not in remote manifest: {path}" for path in unexpected)
+
+    for relative in sorted(set(expected) & set(actual)):
+        entry = expected[relative]
+        path = actual[relative]
+        expected_size = entry.get("bytes")
+        expected_hash = entry.get("sha256")
+        if not isinstance(expected_size, int) or expected_size < 0:
+            errors.append(f"manifest has invalid byte size for {relative}")
+            continue
+        if path.stat().st_size != expected_size:
+            errors.append(
+                f"size mismatch for {relative}: expected {expected_size}, found {path.stat().st_size}"
+            )
+            continue
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            errors.append(f"manifest has invalid sha256 for {relative}")
+            continue
+        actual_hash = sha256_file(path)
+        if actual_hash != expected_hash.lower():
+            errors.append(f"sha256 mismatch for {relative}")
+
+    return manifest, errors
+
+
+def write_verification(root: Path, manifest_path: Path, manifest: dict) -> Path:
+    marker = root / VERIFICATION_NAME
+    payload = {
+        "schema": "remote-gpu-trainer/PULL-VERIFIED/v1",
+        "run_id": manifest["run_id"],
+        "manifest_sha256": sha256_file(manifest_path),
+        "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+        "files": len(manifest["files"]),
+        "bytes": sum(item["bytes"] for item in manifest["files"]),
+    }
+    temporary = marker.with_name(marker.name + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, marker)
+    return marker
 
 
 def main() -> int:
@@ -31,6 +134,8 @@ def main() -> int:
     ap.add_argument("--allow-pickle", action="store_true",
                     help="Permit the weights_only=False fallback (executes pickle) for checkpoints you trust -- "
                          "needed only when a checkpoint pickles non-tensor objects (e.g. an args Namespace); OFF by default")
+    ap.add_argument("--manifest", type=Path, default=None,
+                    help="Remote manifest path; defaults to <ckpt_dir>/PULL_MANIFEST.json and is mandatory")
     args = ap.parse_args()
 
     root = Path(args.ckpt_dir)
@@ -39,6 +144,17 @@ def main() -> int:
         return 1
     if not root.is_dir():
         print(f"ERROR: {root} is not a directory")
+        return 1
+
+    manifest_path = (args.manifest or root / MANIFEST_NAME).resolve()
+    if not manifest_path.is_file():
+        print(f"ERROR: required remote manifest not found: {manifest_path}")
+        return 1
+    manifest, manifest_errors = validate_manifest(root.resolve(), manifest_path)
+    if manifest_errors:
+        print("ERROR: remote-to-local manifest verification failed")
+        for error in manifest_errors[:50]:
+            print(f"  - {error}")
         return 1
 
     # Structural checks BEFORE importing torch: an empty (or short) input must fail
@@ -138,7 +254,12 @@ def main() -> int:
         for name, epoch, metric in metrics_rows:
             print(f"  {name:40s} epoch={epoch:3} {metric}")
 
-    return 0 if not errors else 1
+    if errors:
+        return 1
+
+    marker = write_verification(root.resolve(), manifest_path, manifest or {})
+    print(f"PULL VERIFIED: {marker}")
+    return 0
 
 
 if __name__ == "__main__":

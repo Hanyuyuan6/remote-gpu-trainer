@@ -31,7 +31,7 @@ Read this whole file before the first local run, then jump to the matching `refe
 mechanics. **Universal gotchas are NOT restated here** — see `references/run-remote/gotchas_universal.md`.
 
 **Table of contents** (`grep -in '<keyword>' profiles/local.md` to jump):
-- 8-field schema for a machine you own (sections 1–8), with the rental-only sections marked **n/a**
+- 8-section schema for a machine you own (sections 1–8), with the rental-only sections marked **n/a**
 
 The one load-bearing idea: **the env/resource/artifact discipline is identical to a rental; only the
 billing-and-teardown machinery is absent.** Don't let "it's my own box" erode the env hygiene or the seed

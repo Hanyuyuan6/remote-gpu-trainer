@@ -123,7 +123,7 @@ remote-gpu-trainer/
 │   ├── run-local/                 #   RUN, a box you own: env-hygiene · launch · multi-gpu · local-oom
 │   ├── run-remote/                #   RUN, a box you rent: principles · 6-phase checklist · monitoring ·
 │   │                              #     ssh · spot-resilience · china-network · parallel-ablation ·
-│   │                              #     multinode · gotchas_universal (U1–U43)
+│   │                              #     multinode · gotchas_universal (U1–U44)
 │   ├── verifying/                 #   VERIFY: methodology (14 probes) · representation-collapse ·
 │   │                              #     smoke-hidden-failures
 │   ├── delivering/                #   DELIVER: principles · data-architecture (EVIDENCE.json) ·
@@ -133,7 +133,7 @@ remote-gpu-trainer/
 │   ├── companions.md              #   optional companion skills + the no-companion fallback
 │   └── self-improvement.md        #   how the skill captures new gotchas without corrupting itself
 ├── profiles/                      # one file per platform — the only place concrete specifics live
-│   ├── _schema.md                 #   the shared 8-field contract every profile fills
+│   ├── _schema.md                 #   the shared 8-section contract every profile fills
 │   ├── local.md                   #   a box you own (no meter, no teardown clock)
 │   ├── autodl.md                  #   deepest, battle-tested
 │   ├── runpod.md  vastai.md  lambda.md  paperspace.md
@@ -150,7 +150,7 @@ remote-gpu-trainer/
 └── evals/                         # cases.jsonl + run_evals.py (no-API-key drift guard) + RESULTS.md
 ```
 
-Each profile fills the same eight fields, so a platform you have never used reads like one you have:
+Each profile fills the same eight sections, so a platform you have never used reads like one you have:
 launch, storage survival-matrix, network, spot/resume, teardown/billing, daemon, gotchas, and script
 overrides.
 
@@ -171,19 +171,20 @@ git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.claude/skills/
 **OpenAI Codex**
 
 ```bash
-git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.codex/skills/remote-gpu-trainer
+git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.agents/skills/remote-gpu-trainer
 ```
 
 **Cursor · Trae · Gemini CLI · VS Code / Copilot · Goose · Kiro · other compatible agents**
 
 Clone the same folder into that agent's skills directory; each agent's docs, or
 [agentskills.io](https://agentskills.io), give the exact location. They all read the same open `SKILL.md`
-standard, so the folder works unchanged across them.
+standard. Provider-bound monitoring, scheduling, and tool names still require the capability mapping in
+`references/run-remote/monitoring_patterns.md` §7; do not assume one provider's primitives exist on another.
 
 **Verify the install (optional).** With [uv](https://github.com/astral-sh/uv):
 
 ```bash
-uvx skills-ref validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill" (the official Agent Skills validator)
+uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill" (the official validator; the CLI binary is `agentskills`, from the `skills-ref` package)
 ```
 
 > **Two caveats.** The optional companion skills it cross-links (`nature-figure`, `experiment-verifier`,
@@ -200,7 +201,7 @@ uvx skills-ref validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill
 - **`references/run-local/`** and **`references/run-remote/`** are the two RUN halves — owning a box (no
   meter; env hygiene, launch, single-node multi-GPU, local OOM) versus renting one (the six-phase
   lifecycle, four-layer durable monitoring, SSH transport, spot resilience, China networking, parallel
-  ablation, multi-node, and the U1–U43 gotcha catalog, each a `symptom → root cause → fix`).
+  ablation, multi-node, and the U1–U44 gotcha catalog, each a `symptom → root cause → fix`).
 - **`references/verifying/`** is the *is-the-number-real* layer: a 14-probe methodology (bug / effect /
   noise classification, leakage, fair comparison, smoke ≠ correct, representation collapse, metric and
   statistical integrity, cross-document reconciliation, the academic-integrity spectrum) plus two deep
@@ -216,7 +217,7 @@ uvx skills-ref validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill
 - **`profiles/`** is one file per platform, the only place concrete specifics live. `local` is a box you
   own; `autodl` is the deepest; alongside are `runpod`, `vastai`, `lambda`, `paperspace`, `china`, and
   `generic-ssh` (which also covers Slurm, K8s, Colab, and Kaggle). `_schema.md` defines the shared
-  eight-field contract.
+  eight-section contract.
 - **`scripts/`** has the parameterized wrapper templates, monitors (memory, GPU health, VRAM-zombie
   reaper, read-only health patrol), transfer (FS aggregation, resumable download, China-mirror setup), the
   load-and-verify checker, and the DELIVER tooling (`reconcile.py`, `manifest_scaffold.py`,

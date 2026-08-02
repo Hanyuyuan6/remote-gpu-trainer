@@ -209,7 +209,10 @@ Symptom → Root cause → Fix:
 Every shell script in `scripts/` ships LF and starts `#!/usr/bin/env bash` + `set -u`; keep that
 contract when authoring new ones. **Never** put an unquoted `|` inside a `grep` regex in a transport or
 poll script — the shell splits it into piped commands and the first reads stdin → hangs forever
-(`references/run-remote/monitoring_patterns.md`).
+(`references/run-remote/monitoring_patterns.md`). And for ad-hoc REMOTE PROBES, prefer the shortest
+single-line command that answers the question: long multi-line heredocs sent over ssh have been observed
+garbled in transit (an `echo "=== src ==="` printed as a literal) — when a probe's output looks scrambled,
+suspect the transport before the box, and fall back to minimal one-liners.
 
 ## 9. Two SSH flavors — proxied/basic SSH cannot `scp`
 

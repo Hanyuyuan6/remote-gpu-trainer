@@ -13,7 +13,7 @@
 #
 # Disclose every CLI override applied below in any paper's Implementation Details — reproducibility
 # depends on the list being complete (the yaml/source stay untouched). See references/run-remote/gotchas_universal.md.
-set -u
+set -uo pipefail
 
 # Arg-count guard FIRST — under `set -u`, CFG="$1" below would abort with an unbound-variable
 # error (and no usage hint) when run with no args. Fail with a readable usage line instead.
@@ -28,14 +28,19 @@ DATA_DIR="${DATA_DIR:-/root/autodl-tmp}"                     # fast per-instance
 DURABLE_DIR="${DURABLE_DIR:-/root/autodl-fs}"                # survives teardown (profile survival matrix); set "" to skip sync
 PROXY_HOOK="${PROXY_HOOK:-source /etc/network_turbo}"        # network-accel hook; ":" (no-op) on a clean box
 CRED_FILE="${CRED_FILE:-/root/.wandb_key}"                   # file holding the tracker key; "" if WANDB_API_KEY already in env
+PY="${PY:-python}"                                           # explicit profile interpreter; AutoDL uses /root/miniconda3/bin/python
 # =======================================================================================
 
 # PROXY_HOOK is an OPERATOR-supplied snippet from your platform profile (e.g. `source /etc/network_turbo`,
 # `module load cuda`, or empty). It is eval'd intentionally so a profile can run an arbitrary setup hook —
 # set it ONLY from your own trusted profile, never from untrusted or remote-derived input.
-eval "${PROXY_HOOK}" 2>/dev/null || true
+if ! eval "${PROXY_HOOK}" 2>/dev/null; then
+    echo "PROFILE SETUP FAILED: PROXY_HOOK returned non-zero" >&2
+    exit 1
+fi
 # The prebuilt base IS the env on most rentals (do not conda create). Activate if present.
 source /root/miniconda3/etc/profile.d/conda.sh 2>/dev/null && conda activate base 2>/dev/null || true
+"$PY" --version >/dev/null 2>&1 || { echo "PY interpreter is unavailable: $PY" >&2; exit 1; }
 if [ -n "$CRED_FILE" ] && [ -f "$CRED_FILE" ]; then export WANDB_API_KEY="$(cat "$CRED_FILE")"; fi
 
 export WANDB_MODE="${WANDB_MODE:-online}"     # offline without a key => W&B silently DISABLED (gotchas_universal)
@@ -67,7 +72,7 @@ CKPT_DIR="$CKPT_ROOT/$NAME"
 mkdir -p "$CKPT_DIR"
 
 # CUSTOMIZE: replace `src.train` with your project's training entrypoint module + its override flags
-python -m src.train --no-strict \
+"$PY" -m src.train --no-strict \
     -o wandb.group="$GRP" \
     -o wandb.tags="$TAGS" \
     -o data.num_workers=2 \
@@ -89,16 +94,31 @@ fi
 # Auto-sync to durable storage. GATE the success line on the actual copy result — an unconditional
 # "synced" echo lies when the durable FS is full / inode-exhausted (references/run-remote/gotchas_universal.md,
 # silent-sync). Verify best.pth landed before claiming success (principle #3). Skip if DURABLE_DIR="".
-if [ "$EXIT" -eq 0 ] && [ -f "$CKPT_DIR/best.pth" ] && [ -n "$DURABLE_DIR" ]; then
+SYNC_EXIT=0
+if [ "$EXIT" -eq 0 ] && [ -n "$DURABLE_DIR" ]; then
     FS_DIR="$DURABLE_DIR/final_ckpts/$NAME"
-    if mkdir -p "$FS_DIR" && cp -f "$CKPT_DIR/best.pth" "$FS_DIR/" && [ -f "$FS_DIR/best.pth" ]; then
-        cp -f "$CKPT_DIR/best_metrics.json" "$FS_DIR/" 2>/dev/null || true
-        cp -rf "$CKPT_DIR/protocol" "$FS_DIR/" 2>/dev/null || true
-        cp -f "$LOG_DIR/$NAME.log" "$FS_DIR/" 2>/dev/null || true
-        echo "[$(date +%H:%M:%S)] synced $NAME to durable storage ($FS_DIR)"
+    if [ ! -f "$CKPT_DIR/best.pth" ] || [ ! -f "$CKPT_DIR/best_metrics.json" ]; then
+        echo "[$(date +%H:%M:%S)] !! DURABLE SYNC BLOCKED for $NAME — best.pth or best_metrics.json is missing." >&2
+        SYNC_EXIT=2
+    elif mkdir -p "$FS_DIR" \
+        && cp -f "$CKPT_DIR/best.pth" "$FS_DIR/" \
+        && cp -f "$CKPT_DIR/best_metrics.json" "$FS_DIR/" \
+        && cp -f "$LOG_DIR/$NAME.log" "$FS_DIR/" \
+        && [ -f "$FS_DIR/best.pth" ] \
+        && [ -f "$FS_DIR/best_metrics.json" ] \
+        && [ -f "$FS_DIR/$NAME.log" ]; then
+        if [ -d "$CKPT_DIR/protocol" ] && ! cp -rf "$CKPT_DIR/protocol" "$FS_DIR/"; then
+            echo "[$(date +%H:%M:%S)] !! DURABLE SYNC FAILED for $NAME — protocol copy failed." >&2
+            SYNC_EXIT=2
+        fi
     else
-        echo "[$(date +%H:%M:%S)] !! DURABLE SYNC FAILED for $NAME — check 'df -i $DURABLE_DIR'. The data-disk copy is source-of-truth."
+        echo "[$(date +%H:%M:%S)] !! DURABLE SYNC FAILED for $NAME — check 'df -i $DURABLE_DIR'. The data-disk copy is source-of-truth." >&2
+        SYNC_EXIT=2
+    fi
+    if [ "$SYNC_EXIT" -eq 0 ]; then
+        echo "[$(date +%H:%M:%S)] synced $NAME to durable storage ($FS_DIR)"
     fi
 fi
 
-exit $EXIT
+if [ "$EXIT" -ne 0 ]; then exit "$EXIT"; fi
+exit "$SYNC_EXIT"

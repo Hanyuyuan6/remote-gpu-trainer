@@ -2,7 +2,7 @@
 
 Purpose: a platform-parameterized, copy-pasteable checkbox runbook for one remote-GPU job, Phase 0
 (environment audit) through Phase 5 (aggregate + verify + teardown). Substrate is delegated to **your
-platform profile** (`profiles/<platform>.md`, 8-field schema in `profiles/_schema.md`) — this file never
+platform profile** (`profiles/<platform>.md`, 8-section schema in `profiles/_schema.md`) — this file never
 hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `SKILL.md`.
 
 `grep -in <keyword> references/run-remote/lifecycle_checklist.md` to jump.
@@ -97,20 +97,22 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 ## Phase 5 — Aggregate + verify + teardown
 
-- [ ] Run the aggregation step (`scripts/aggregate_to_fs.sh`, idempotent — safe to re-run) to checked-sync results to the *profile durable mount*. **Gate the success line on the actual copy result** — `cp …; echo synced` lies on a full/inode-exhausted FS (principle #3, gotcha U33).
-- [ ] Confirm the durable mount has the expected artifact count: `ssh <alias> 'ls <profile durable mount>/final_ckpts/ | wc -l'`.
-- [ ] Pull results to local (resumable per-dir scp/rsync loop); HARD-sanitize the local target to `/path/to/local` — never a real personal path.
-- [ ] **Load-and-verify each artifact** before teardown: `python scripts/verify_local.py /path/to/local/final_ckpts/` → expect `OK N/N, errors 0`. Re-pull + re-verify any error.
+- [ ] Write an explicit UTF-8 expected-roster file (one result directory per line) and choose an immutable `RUN_ID`.
+- [ ] Run `scripts/aggregate_to_fs.sh` with `RUN_ID` and `EXPECTED_ROSTER_FILE`. It must checked-sync every required file and build `PULL_MANIFEST.json`; a count alone is not completeness evidence.
+- [ ] Pull with `scripts/download_loop.sh`; it always lets rsync compare/resume and never skips a directory because it is merely large.
+- [ ] Require the loop's final `PULL VERIFIED` line and local `PULL_VERIFIED.json`. This proves exact roster, byte sizes, SHA-256, metrics JSON, and checkpoint load. Re-pull + re-verify any error.
 - [ ] Record disclosable run facts for the paper: CLI overrides, tracker summary URL (a hosted tracker survives teardown — **huggingface-skills:huggingface-trackio**). Transport verbs (`hf download --resume`, `hf upload-large-folder`) → **huggingface-skills:hf-cli**.
 - [ ] ONLY THEN perform the *profile meter-stop verb*, AFTER explicit user approval of the specific cost-affecting action.
 
-> **verify:** `verify_local.py` reports 100% OK *before* any teardown.
+> **verify:** `PULL_VERIFIED.json` binds the local bundle to the remote manifest and run id *before* teardown.
 
 > **Iron Law — teardown gate:** NO `stop` / `release` / `terminate` / `destroy` / file-delete until
-> checkpoints are **pulled to local AND verified by load**, AND the user has explicitly approved the
+> checkpoints match an explicit remote roster + SHA-256 manifest, are **pulled to local AND verified by
+> load**, `PULL_VERIFIED.json` exists, AND the user has explicitly approved the
 > cost-affecting action. "It looked done in the log" is not evidence (principle #3). On most platforms the
 > meter-stopping verb is **irreversible** (deletes the disk) — confirmation matters *more*, not less. The
-> general form is **superpowers:verification-before-completion** (REQUIRED).
+> general form may be reinforced by a separate verification-before-completion companion when installed;
+> the bundled manifest gate remains mandatory and self-contained.
 
 ---
 

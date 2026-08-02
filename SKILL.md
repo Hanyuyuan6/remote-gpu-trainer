@@ -6,7 +6,7 @@ description: |
   single/multi-instance). Triggers (multilingual): 本地训练/local training, 远程 GPU 训练/租卡/GPU rental,
   spot 抢占/preemption, 断点续训/resumable, 防 SSH 断线/tmux 守护, 多实例 ablation,
   关机/销毁/stop-vs-terminate billing, checkpoint 磁盘满, CUDA OOM/显存不足, loss NaN/spike/不收敛,
-  overfit 单 batch, FSDP/DeepSpeed/torchrun, 多卡 hang, dataloader/数据增广 bug;
+  overfit 单 batch, FSDP/DeepSpeed/torchrun, 多卡 hang, 训练太慢/GPU util 低, dataloader/数据增广 bug;
   消融结果异常/ablation looks wrong, 复现/reproducibility, 数据泄漏/leakage/test-set tuning,
   mAP=0/全零指标, 输出恒定/model-ignores-input, train-good/val-collapse, 对比不公平/unfair baseline,
   单 seed/no error bars, loss 太好/too-good-to-be-true, 跨文档对账/cross-doc drift;
@@ -20,6 +20,8 @@ compatibility: |
   and DELIVER are platform-agnostic and need only a shell + the project's results. A few durable-monitoring
   recipes assume a host background-task runner + scheduler — map them to the running agent's equivalents
   (references/run-remote/monitoring_patterns.md §7).
+metadata:
+  last-model-review: "2026-07-19 Fable-5 library review - POLISH 2 fixed (bundled-resources enum, P6-DROPPED visible) + U44 ship-back __main__ guard, AutoDL nohup gateway-kill ruling, waiter re-arm, ssh short-command, f-string <3.12 qualifier"
 ---
 
 # remote-gpu-trainer — the DL Experiment Lifecycle
@@ -77,6 +79,15 @@ lifecycle) is in **`references/run-remote/principles.md`** — read it before Ph
 - **Cost and destructive actions are the user's call.** Never auto-release/terminate, never delete durable
   files without confirmation; if cleanup can't free space, ask to expand the disk, don't silently shrink
   the experiment.
+- **Before teardown, prove the evidence outlives the host.** Teardown is irreversible and *"I scp'd it
+  back"* is just another log line. The gate is not "files copied" but **"every number I reported
+  re-reads from the local copy"** — diff each claim against the pulled artifact, then write a
+  provenance note *next to the data* (protocol, reference frame, caveats) so a later reader can
+  retrace it without the chat log. Two traps: (1) what you did **not** pull is a decision, not an
+  oversight — say which (checkpoints are usually re-derivable from config+seed *if* determinism is
+  established; results are not); (2) **re-read the inventory, don't trust its prose** — a note saying
+  "none of these are local" may mean *none was trained here*, not *none is stored here*; the two differ
+  by everything when you are about to press destroy.
 - **Audit → disclose, not enforce.** What is mandatory is *disclosure*, not the *fix*. An integrity
   finding (no disjoint val, leakage, test touched during selection, a number you can't re-derive) must
   ride *with* the conclusion — but the skill discloses, it does not block.
@@ -119,16 +130,20 @@ a blocking `sleep`) · **4** durable monitoring (the four-layer architecture →
 `references/run-remote/monitoring_patterns.md`; a session-bound watcher dies with the session) · **5**
 aggregate + verify + teardown.
 
-> **Iron Law — teardown gate:** NO `release` / `terminate` / `destroy` / file-delete until checkpoints are
-> **pulled to local AND verified by load** (`scripts/verify_local.py`), and the user has explicitly
-> approved the cost-affecting action. "It looked done in the log" is not evidence. On most platforms the
+> **Iron Law — teardown gate:** NO `release` / `terminate` / `destroy` / file-delete until the remote
+> durable result root has an immutable `PULL_MANIFEST.json` built from an explicit expected roster,
+> the pull matches that exact roster + every byte size + SHA-256, every checkpoint loads, and
+> `scripts/verify_local.py` writes local `PULL_VERIFIED.json`; then the user must still explicitly
+> approve the cost-affecting action. A directory count, a size heuristic, an old loadable checkpoint,
+> or "it looked done in the log" is not evidence. On most platforms the
 > meter-stopping action is **irreversible** (deletes the disk) — confirmation matters more, not less.
 
 Other remote references: `ssh_transport.md` (rsync/scp resumable, secrets-via-stdin, CRLF) ·
 `spot-resilience.md` (preemption grace, Young/Daly cadence, atomic-write resume) · `china-network.md`
 (mirrors + `HF_ENDPOINT` + the `no_proxy` trap) · `parallel_ablation.md` (fan-out independence +
-reconciliation) · `multinode.md` (NCCL/fabric, advanced) · `gotchas_universal.md` (the full U1–U43 catalog
-with a grep index).
+reconciliation) · `multinode.md` (NCCL/fabric, advanced) · `production-matrix-acceptance.md`
+(shared-disk multi-node patrol, producer→independent acceptance, control/science failure separation) ·
+`gotchas_universal.md` (the full U1–U44 catalog with a grep index).
 
 ## When training itself breaks (the model, not the platform)
 
@@ -154,6 +169,10 @@ Stance: **audit → disclose** — surface an integrity issue with the conclusio
 - Full methodology (the 14-section probe ladder + the 6 invariants) → `references/verifying/methodology.md`.
 - Constant / degenerate output, `real == shuffle`, model-ignores-input → `references/verifying/representation-collapse.md`.
 - A green smoke that hides undertraining vs a real bug; loss-low-but-samples-bad → `references/verifying/smoke-hidden-failures.md`.
+- For an atomic producer bundle, run `scripts/verify_artifact_bundle.py` on a different node; compare two
+  independently produced acceptances with `scripts/compare_acceptance.py`. A hash match proves identity,
+  a safe load proves checkpoint structure, and a fresh evaluator proves the metric—none substitutes for
+  the others.
 
 > **State the metric's direction when comparing** (PSNR/SSIM/mAP ↑ better; LPIPS/NMSE/loss ↓ better) —
 > never assume. Tracker forensics / pruning duplicate runs → `scripts/wandb_forensics.py`.
@@ -173,11 +192,12 @@ and cross-document consistency by **mechanism**, not by hand. Eight principles, 
   blocking one.
 - **Advanced (flip on near submission — YAGNI applies to provenance too)** — **P4** data/split versioned
   + hash-pinned (leakage becomes machine-checkable) · **P5** one-command repro from a clean clone
-  (`scripts/repro.sh.template`).
+  (`scripts/repro.sh.template`). (P6 — fixed showcase samples — deliberately **DROPPED**: sample selection
+  is the user's call.)
 
 Mechanics: the on-disk tree → `references/delivering/data-architecture.md`; the two manifest schemas →
 `references/delivering/evidence-manifest-schema.md`; the one-folder-per-figure convention + pixel gate →
-`references/delivering/figures.md`; the per-number disclosure checklist → `references/delivering/delivery-gate.md`.
+`references/delivering/figures.md`; the per-number disclosure checklist → `references/delivering/delivery-gate.md`; the artifact/data completeness reconciliation that must pass *before* that gate — every result row's ckpt↔split↔input-data↔figure chain proven present, cleanup distinguished from organization → `references/delivering/completeness-reconciliation.md`.
 
 > **`EVIDENCE.json` is the project-level single source of truth** — a machine-readable claims↔evidence map
 > (each claim ← the supporting exp-id / metric / figure + a paper anchor + the repo `file:line`).
@@ -188,8 +208,8 @@ Mechanics: the on-disk tree → `references/delivering/data-architecture.md`; th
 
 Recommended separate installs that deepen RUN / VERIFY / DELIVER; **the skill needs none of them** and works
 fully standalone. One-line-each list, what each adds, and the no-companion fallback →
-**`references/companions.md`**. In short: figure drawing (nature-figure / publication-chart / scipilot-figure),
-experiment verification (the `experiment-verifier` agent), parallel ablation
+**`references/companions.md`**. In short: figure drawing (nature-figure),
+data availability (`nature-data`), experiment verification (the `experiment-verifier` agent), parallel ablation
 (`superpowers:dispatching-parallel-agents`), HF transport + hosted tracker
 (`huggingface-skills:hf-cli` / `huggingface-trackio`), and — one layer above — an idea→conclusion
 orchestrator (`auto-research-pipeline`: human gates + stage wiring; this skill executes, that one decides
@@ -210,13 +230,14 @@ re-verify any teardown/billing fact against current docs before betting money or
 Load only what the current phase needs (the body sections above name the individual files).
 
 - `references/run-local/` — **own-a-box**: env-hygiene · launch · multi-gpu · local-oom.
-- `references/run-remote/` — **rented-box**: principles · lifecycle_checklist · monitoring_patterns · ssh_transport · spot-resilience · china-network · parallel_ablation · multinode · gotchas_universal (U1–U43).
+- `references/run-remote/` — **rented-box**: principles · lifecycle_checklist · monitoring_patterns · ssh_transport · spot-resilience · china-network · parallel_ablation · multinode · production-matrix-acceptance · gotchas_universal (U1–U44).
 - `references/training/` — the **DL-training debug layer** (8 files; local/remote-agnostic) — routed above.
 - `references/verifying/` — **is-the-number-real**: methodology · representation-collapse · smoke-hidden-failures.
-- `references/delivering/` — **deliverable**: principles · data-architecture (+`EVIDENCE.json`) · evidence-manifest-schema · figures · delivery-gate.
+- `references/delivering/` — **deliverable**: principles · data-architecture (+`EVIDENCE.json`) · evidence-manifest-schema · figures · delivery-gate · completeness-reconciliation.
 - `references/companions.md` (optional skills + fallbacks) · `references/self-improvement.md` (capture-a-gotcha loop).
 - `profiles/<platform>.md` — per-platform substrate (7 rental profiles + `local.md`; `_schema.md` = the fields).
-- `scripts/` — wrappers (`run_one`/`run_queue`), monitors (`mem_monitor`, `gpu_health`, `health_patrol.sh.template`),
-  transfer (`download_loop`, `aggregate_to_fs`, `setup-china-mirrors`), `verify_local.py`, delivering
-  (`manifest_scaffold.py`, `reconcile.py`, `repro.sh.template`), `wandb_forensics.py`, `check_staleness.py`.
+- `scripts/` — wrappers (`run_one`/`run_queue`), monitors (`mem_monitor`, `gpu_health`, `health_patrol.sh.template`, `reap_vram_zombies.sh`),
+  transfer (`download_loop`, `aggregate_to_fs`, `build_pull_manifest.py`, `setup-china-mirrors`), `verify_local.py`, delivering
+  (`manifest_scaffold.py`, `reconcile.py`, `repro.sh.template`), atomic acceptance
+  (`verify_artifact_bundle.py`, `compare_acceptance.py`), `wandb_forensics.py`, `check_staleness.py`.
 - `examples/autodl_sweep/` — one runnable worked case · `evals/` — the regression harness.

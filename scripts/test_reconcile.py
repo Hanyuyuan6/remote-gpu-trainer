@@ -110,6 +110,24 @@ class TestReconcile(unittest.TestCase):
         self.assertEqual(len(drifts), 1)
         self.assertEqual(Path(drifts[0].doc), bad)
 
+    def test_variance_sample_count_and_table_number_are_not_metrics(self) -> None:
+        """Only the first standalone number after the anchor is the reported scalar."""
+        paper = self.dir / "paper.md"
+        paper.write_text("PSNR 31.42 ± 0.08, n=100 (Table 2).\n", encoding="utf-8")
+        self.assertEqual([], reconcile.reconcile(self.evidence, [paper]))
+
+    def test_explicit_aliases_disambiguate_two_psnr_claims(self) -> None:
+        evidence = _write_evidence(
+            self.dir,
+            [
+                {"id": "C1", "aliases": ["PSNR/Set5"], "evidence": [{"metric": "psnr_set5", "value": 31.42}]},
+                {"id": "C2", "aliases": ["PSNR/Set14"], "evidence": [{"metric": "psnr_set14", "value": 28.10}]},
+            ],
+        )
+        paper = self.dir / "paper.md"
+        paper.write_text("PSNR/Set5 31.42; PSNR/Set14 28.10.\n", encoding="utf-8")
+        self.assertEqual([], reconcile.reconcile(evidence, [paper]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

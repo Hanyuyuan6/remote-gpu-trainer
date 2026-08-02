@@ -96,7 +96,10 @@ Re-training into a checkpoint dir that still holds an earlier run's checkpoints,
 your fresh (lower-epoch) ones — so `sorted(glob('epoch_*.pth'))[-1]` loads the **stale**
 one, and a "the fix didn't work" verdict is actually testing the unfixed model. **Tell:** a
 metric **byte-identical across two runs** (same seed → same near-random state is the
-giveaway — e.g. an EMA ε-MSE of exactly 0.8941 twice). Clear the checkpoint dir before
+giveaway — e.g. an EMA ε-MSE of exactly 0.8941 twice). Do not silently clear the checkpoint dir. Move the
+suspect directory to a uniquely named quarantine (or mark it read-only), start the retry in a fresh directory,
+and keep a provenance pointer. Delete the quarantined artifacts only after the user confirms they have no
+recovery or audit value.
 re-running, or assert the loaded ckpt's epoch/timestamp is the new one. This is the
 "trust the artifact you loaded" invariant one level deeper: also trust it is the artifact
 you *think* you loaded.

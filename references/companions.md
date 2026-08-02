@@ -13,10 +13,8 @@ pixel-gates — this skill owns the *provenance + pixel-reopen*, they own the *r
 
 - **`nature-figure`** — submission-grade Nature/high-impact figure workflow (matplotlib/seaborn or
   ggplot2), multi-panel layout, SVG/PDF/TIFF export, journal QA.
-- **`publication-chart-skill`** — publication-quality charts/plots from data, styling and export focused.
-- **`scipilot-figure`** — scientific figure assembly/polish for manuscripts.
 
-> Fallback with none installed: build the figure with plain matplotlib/R inside the figure's one-folder
+> Fallback if not installed: build the figure with plain matplotlib/R inside the figure's one-folder
 > layout, then still run the `references/delivering/figures.md` pixel re-open gate yourself.
 
 ## Data availability (DELIVER, submission)
@@ -44,6 +42,16 @@ pixel-gates — this skill owns the *provenance + pixel-reopen*, they own the *r
 
 > Fallback: apply the independence + isolated-write-path rules in `parallel_ablation.md` manually, then reconcile.
 
+**An idempotency guard must see at least as far as the scheduler does.** Resume-idempotency (same
+launch command continues from the last checkpoint) is per-machine and does not make cross-machine
+dispatch safe. Moving a queued job from instance A to a freed instance B on the assumption that
+A "will skip it anyway" cost ~35 minutes of duplicate compute: A's guard tested for a result file
+on **A's own filesystem**, B's output never appeared there, so the check simply came up empty.
+Either give the guard shared state (a shared volume, or one registry recording who is running
+what), or **explicitly remove the job from the origin queue** when you move it — killing A's tmux
+entry rather than trusting it to notice. Same root as judging liveness from one node's log: a
+local view cannot answer a global question.
+
 ## HF transport + hosted tracker (RUN / VERIFY)
 
 - **`huggingface-skills:hf-cli`** — the transport verbs (`hf download --resume`, `hf upload-large-folder`,
@@ -54,3 +62,12 @@ pixel-gates — this skill owns the *provenance + pixel-reopen*, they own the *r
 
 > Fallback: use `rsync`/`scp` resumable loops (`references/run-remote/ssh_transport.md`) for transport and
 > `scripts/wandb_forensics.py` (or any tracker you already use) for run forensics.
+
+## Orchestration — one layer above (whole-pipeline callers)
+
+- **`auto-research-pipeline`** — takes a research IDEA end-to-end through gated stages; this skill is its
+  execution engine (Stage 4 RUN) and its number-court foundation (Stage 5 VERIFY, which dispatches the
+  `experiment-verifier` agent above). Use it when the task is "idea → trustworthy conclusion", not a single
+  manually-specified run.
+
+> Fallback: drive RUN → VERIFY → DELIVER from this skill directly and keep your own gate notes between stages.

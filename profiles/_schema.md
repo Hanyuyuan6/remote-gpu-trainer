@@ -77,8 +77,10 @@ repeated. Give each a stable local id (e.g. `RP1`, `VAST2`).
 ### 8. SCRIPT OVERRIDES
 The exact values to parameterize the `scripts/` templates for this platform:
 `DATA_DIR=` (fast scratch) · `DURABLE_DIR=` (survives teardown) · `PROXY_HOOK=` · `CRED_FILE=` (file path; `""` if the key is an env var/secret) · `SCRATCH=` (what to prune) · `HF_HOME=` · `DETACH=`.
-The templates read exactly these env-var names. Two further knobs *derive* rather than being set per
-platform: `RUN_ONE` (the queue runner's path to `run_one.sh`) defaults to `$DURABLE_DIR/run_one.sh`, and
+The templates read `DATA_DIR` / `DURABLE_DIR` / `PROXY_HOOK` / `CRED_FILE` / `HF_HOME` by exactly these
+names. `SCRATCH=` and `DETACH=` are agent-applied knobs (what to prune on success; which detach primitive
+wraps the launch) — the agent reads them from this section, no template does. Two further knobs *derive*
+rather than being set per platform: `RUN_ONE` (the queue runner's path to `run_one.sh`) defaults to `$DURABLE_DIR/run_one.sh`, and
 `PROJECT_REPO_DIR` (where *this run's* code lives) is a per-run value — see "Portable job request" below;
 set either explicitly only if your layout differs.
 

@@ -49,7 +49,7 @@ endorsed by any of them.
 ------------------------------------------------
 
 The companion skills listed in references/companions.md (nature-figure,
-publication-chart-skill, scipilot-figure, the experiment-verifier agent,
+nature-data, the experiment-verifier agent, auto-research-pipeline,
 superpowers:dispatching-parallel-agents, huggingface-skills:hf-cli,
 huggingface-skills:huggingface-trackio) are NOT bundled or redistributed with
 this skill. Each is installed separately and governed by its own license. This

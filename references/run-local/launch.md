@@ -82,6 +82,11 @@ tmux ls                    # reconcile a watcher against the real session
 the session is gone and the run must be relaunched (make resume idempotent, L-pointers). On a desktop you keep
 on, reboot is rare; on a laptop that sleeps, sleep is fine (tmux survives it) but a shutdown is not.
 
+**Process-identity trap:** never use `pkill -f <wrapper-script-name>` to clean a queued run. The tmux server
+can retain the original `new-session ... <wrapper-script-name>` argv, so that pattern can kill the server and
+every unrelated session. Prefer `tmux kill-session -t <exact-session>` after inspecting `tmux ls`; if a worker
+must be stopped, match and verify the real worker PID/argv and ancestry, not the launcher filename.
+
 ### L4 — `nohup`: detach headless (no session to reattach)
 
 **Symptom**: you just want the run going in the background and don't need an interactive view — or `tmux`

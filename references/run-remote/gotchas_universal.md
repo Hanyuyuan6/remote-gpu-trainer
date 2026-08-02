@@ -19,7 +19,7 @@ To jump: `grep -in '<keyword>' references/run-remote/gotchas_universal.md` (e.g.
 - **Monitoring** — U16 stale-waiters/zombie-monitors · U17 unquoted-pipe-grep-hang+robust-poll · U18 two-leg-remote-self-completion · U19 tracker-deletion-lags · U20 hosted-tracker-survives-teardown · U39 live-panel/TB-silently-empty (path/port/process mismatch) · U43 block-buffered-stdout-looks-frozen
 - **GPU health** — U21 nvidia-smi-util%-is-a-liar · U22 Xid-48/79-dead-GPU-re-rent · U23 thermal/power-throttle-steals-25-40%
 - **Dataloader & IO** — U24 dataloader-starvation-knobs · U25 many-small-files→shard-into-tar · U40 intra-op-thread-oversubscription-starves-GPU
-- **Env & Container** — U26 CRLF-breaks-sh · U27 overlay-config-files · U28 CUDA-toolkit-vs-driver-vs-torch · U29 install-from-lockfile · U30 pin-image-by-sha256 · U31 container-runs-but-no-GPU · U42 box-code-drift/verify-deploy
+- **Env & Container** — U26 CRLF-breaks-sh · U27 overlay-config-files · U28 CUDA-toolkit-vs-driver-vs-torch · U29 install-from-lockfile · U30 pin-image-by-sha256 · U31 container-runs-but-no-GPU · U42 box-code-drift/verify-deploy · U44 ship-back-script-needs-__main__-guard
 - **Cost & teardown** — U32 task-epoch-default · U33 silent-checked-sync
 - **Secrets & trackers** — U34 secrets-via-stdin · U35 tracker-offline-without-key
 - **Delegated (cross-link only)** — U36 cuDNN-nondeterminism · U37 matplotlib-2^16 · U38 GPU-0%-util-data-bound
@@ -317,9 +317,10 @@ waiter but never stopped the OLD one — its marker (in a superseded log) never 
 A `run_in_background` waiter is **not** time-capped (a 781 s task ran to completion + notified; the ~600 s
 cap is on **foreground** Bash only). The real silent-failure mode is a waiter that never EXITS (U17).
 
-**Fix**: one waiter per live run — superseding a run, stop the old waiter first (`TaskStop`; cross-session
-IDs aren't stoppable from a resumed session — dismiss those from the UI). Multi-hour wait → a **persistent
-Monitor** (no 10-min cap) + a stall-detector emit so a hung run still notifies. A persistent Monitor dies on
+**Fix**: one waiter per live run — superseding a run, cancel the old watcher with the current host's real
+task-control capability (Claude Code: `TaskStop`; cross-session IDs must be dismissed from its UI).
+Multi-hour wait → a persistent **local watcher** when the host truly provides one (Claude Code: `Monitor`)
++ a stall-detector emit so a hung run still notifies. A session-bound watcher dies on
 session resume → after any resume, check the remote ground-truth directly (`tmux ls`, `grep DONE log`,
 `nvidia-smi`); never trust a monitor that may be gone (principle #3).
 
@@ -397,6 +398,19 @@ already exports it); for a shell pipeline use `stdbuf -oL`. And judge liveness b
 cadence** — checkpoint `mtime`, the TB scalar API, `nvidia-smi` (monitoring_patterns §0 corollary; the
 deeper "is it actually hung?" attach is py-spy, throughput-profiling **T21**). A frozen log is the single
 most common false "dead run."
+
+### U44 — A script written on the Linux box crashes on Windows after ship-back: `DataLoader(num_workers>0)` without a `__main__` guard
+
+**Symptom**: a training/eval script that ran for weeks on the rental box is cloned to a Windows machine
+(yours or a paper reader's) and **infinitely recurses / spawns endless processes** at startup.
+
+**Root cause**: Linux `fork` tolerates module-level DataLoader construction; Windows `spawn` re-imports
+the module in every worker, so any executable top-level code re-runs per worker — recursion.
+
+**Fix**: before pulling a remote-authored script into a repo (and at release time — cross-link
+`github-release` ship-day traps), check it has `if __name__ == "__main__":` around the entry path.
+Measured: a published repo's only unguarded script was exactly the one carried back from the remote box —
+the locally-authored ones all had guards.
 
 ---
 

@@ -3,8 +3,8 @@
 Run N ablation cells in parallel across instances/queues without corrupting shared state, then
 reconcile and re-verify every cell before any teardown. The mechanism is **one job per cell with an
 isolated write path**; the discipline is **`superpowers:dispatching-parallel-agents`'s independence
-predicate + reconciliation**. **REQUIRED:** `superpowers:dispatching-parallel-agents` and
-**REQUIRED:** `superpowers:verification-before-completion`.
+predicate + reconciliation**. If the named companion skills are installed, use them; otherwise apply
+the independence, reconciliation, and evidence gates fully specified in this file.
 
 To jump: `grep -in <keyword> references/run-remote/parallel_ablation.md`.
 
@@ -65,7 +65,7 @@ metrics + log to `FS/<name>/`, so a released/dead instance still leaves its cell
 
 ## 3. The independence predicate
 
-**REQUIRED:** `superpowers:dispatching-parallel-agents` — fan out only over work whose units share no
+When a parallel-agent dispatcher is available, use it; in every host, fan out only over work whose units share no
 mutable state. Here the predicate is concrete: **each cell writes to its own output directory and
 nothing else.** The per-job output dir is the platform analogue of a **git worktree** — an isolated
 workspace where one agent's writes can never collide with another's.
@@ -134,12 +134,22 @@ form of principle #8 (idempotent resume); combined with per-cell checkpoint-load
 half-finished cell resumes mid-cell, not from scratch. Keep `start_index` aligned to the queue file:
 appending lines is safe, **reordering or deleting earlier lines shifts every index** — append only.
 
+**Idempotency guard scope must ⊇ scheduling scope.** A per-cell "skip if `FS/final_ckpts/<name>/best.pth`
+exists" guard reads the **local** filesystem — it is only idempotent *within one machine*. The moment you
+schedule across machines (move cell k from a busy box to a free box's queue to parallelize), the origin's
+guard cannot see the new box's output and re-runs the cell anyway — two machines burn the same job. A
+local guard answers a global question with a local view (same failure family as watcher "done" ≠ ground
+truth, principle #3). To move a job across machines, either (a) point every guard at **shared state** (a
+shared FS mount or a central "who-owns-what" registry), or (b) **explicitly remove it from the origin
+queue** (kill the origin tmux / delete its queue line) rather than trusting the origin to skip. Don't
+assume "the runner is idempotent" covers a cross-box move — verify which filesystem the predicate reads.
+
 ---
 
 ## 6. Mandatory post-fan-out reconciliation + full re-verify
 
-**REQUIRED:** `superpowers:dispatching-parallel-agents` (reconcile) and
-**REQUIRED:** `superpowers:verification-before-completion` (evidence before any success claim). When
+Use installed dispatch/verification companions when available; otherwise run the same bundled
+reconciliation and evidence-before-success gates below. When
 queues report done, the watcher's "done" is a **claim** (principle #3), not ground truth — a cell can
 report success on a silently-failed sync, OOM mid-write, or never have run because its instance died.
 

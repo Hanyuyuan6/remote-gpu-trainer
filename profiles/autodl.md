@@ -146,7 +146,8 @@ anywhere else are invisible in the web tile no matter how correct the `SummaryWr
 has `--reload=5`, so the run appears within ~5 s — no restart). Verify with
 `curl -s http://127.0.0.1:6007/data/runs` (expect a JSON array with the run), NOT `ss` (can show nothing
 inside the container while curl returns 200). Local logs die with the instance — for durable curves use a
-hosted tracker (**REQUIRED:** huggingface-skills:huggingface-trackio).
+hosted tracker (use `huggingface-skills:huggingface-trackio` when installed; otherwise use the
+project's existing hosted tracker and the bundled `scripts/wandb_forensics.py`).
 
 **SSH flavor.** Direct-TCP SSH on the per-instance host:port — `scp`/`rsync` work normally (no proxied-SSH
 restriction). Use a per-dir resumable loop for large transfers (single-connection `scp -r` resets mid-
@@ -195,8 +196,8 @@ re-download. Low balance / arrears also force-stop the instance. **Surface this 
 **Teardown Iron Law (SKILL.md Phase 5):** no 释放 / file-delete until `best.pth` is **pulled to local AND
 verified by load** (`scripts/verify_local.py`) AND the user explicitly approves — "it looked done in the
 log" is not evidence (principle #3). Because 关机 is non-destructive here, the cheap safe move when unsure
-is to **关机 and ask**, never 释放 on a guess. **REQUIRED:** superpowers:verification-before-completion is
-the general form of this gate.
+is to **关机 and ask**, never 释放 on a guess. If a separate verification-before-completion skill is
+installed, invoke it; otherwise enforce the exact manifest + `PULL_VERIFIED.json` gate bundled here.
 
 ---
 
@@ -207,6 +208,12 @@ and `apt-get install tmux` fails when egress is down. Zero-dependency fallback:
 `nohup bash run_queue.sh queue.txt </dev/null >master.log 2>&1 &` — survives an SSH drop (SIGHUP), needs
 no package. Verify either with `pgrep -af <script>`. The detach survives an SSH drop; it does **not**
 survive a 关机/reboot — that is what checkpoint+resume (§4) is for.
+
+⚠️ **Field ruling (2026-07): long-running nohup processes have been observed killed by the AutoDL
+gateway** ("远程长驻进程必须 tmux,nohup 会被 AutoDL 网关杀"). Treat nohup as a *short-job* escape hatch
+only; for anything long-running, getting tmux installed is worth the delay. If forced onto nohup, assume
+silent death: re-verify liveness (`pgrep` + log mtime) at every check-in, and **re-arm the monitoring
+waiter at every report** — one missed re-arm cost a 5.5 h monitoring blackout + 4 h idle GPU.
 
 **Native queue: none.** AutoDL has no built-in scheduler → use the bundled `scripts/run_queue.sh.template`
 (resumable queue iterator, `start_index` for resume) driving `scripts/run_one.sh.template` per cell.

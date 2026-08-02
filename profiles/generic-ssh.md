@@ -26,7 +26,7 @@ Read this whole file before Phase 0 on any unbranded rental, then jump to the ma
 **Universal gotchas are NOT restated here** — see `references/run-remote/gotchas_universal.md`.
 
 **Table of contents** (`grep -in '<keyword>' profiles/generic-ssh.md` to jump):
-- BASELINE: 8-field schema for the bare-SSH box (sections 1–8)
+- BASELINE: 8-section schema for the bare-SSH box (sections 1–8)
 - THIN DIFF — SLURM (sbatch replaces tmux)
 - THIN DIFF — KUBERNETES (a Job manifest replaces the shell)
 - THIN DIFF — COLAB / KAGGLE (not SSH-orchestratable)
@@ -48,7 +48,8 @@ swappable plug.
 - **Download weights/datasets ON the box**, not over the local uplink: `ssh gpu-box 'cd ~/proj &&
   hf download <repo> --local-dir data'` (or `aws s3 cp`, `wget`). The box almost always has a fatter,
   cheaper pipe to HF/S3 than a home connection — pushing a 50 GB checkpoint over a residential uplink
-  is the classic self-inflicted stall. Transport verbs → **REQUIRED:** `huggingface-skills:hf-cli`.
+  is the classic self-inflicted stall. Use `huggingface-skills:hf-cli` when installed; otherwise use
+  the same `hf` CLI transport verbs directly.
 - **Env contract:** whatever the host ships. There is no prebuilt "base" guarantee — inspect
   `which python && python -V && nvidia-smi` first. If the image has a usable env, treat it as AutoDL's
   base (do not `conda create` on a throwaway box); if it is bare, `conda create` / `venv` once and
@@ -108,8 +109,9 @@ overnight idle instance is the most expensive single mistake on metered hardware
 - "Stop after pulling results" is a **mandatory final phase**, not an afterthought. Honor the
   **teardown Iron Law**: no stop/destroy until checkpoints are **pulled to local AND verified by
   load** (`scripts/verify_local.py`) **AND** the user has approved the cost-affecting action.
-  "It looked done in the log" is not evidence (principle #3). **REQUIRED:**
-  `superpowers:verification-before-completion`.
+  "It looked done in the log" is not evidence (principle #3). If a separate
+  verification-before-completion skill is installed, invoke it; otherwise enforce this skill's
+  exact manifest + local `PULL_VERIFIED.json` gate.
 
 ## 6. DAEMON TOOL
 
@@ -127,7 +129,9 @@ overnight idle instance is the most expensive single mistake on metered hardware
 - **GEN1 — Forgotten box bills 24/7.** Symptom: a week-old invoice for an instance that finished
   training on day one. → Root cause: nothing on a bare box reclaims it; the human is the only janitor.
   → Fix: make teardown a tracked Phase-5 step; after the verified pull, prompt the user to stop/destroy
-  (never auto-act — principle #9); for cross-session safety set a recurring reminder (Claude Code `/schedule`; other hosts → `references/run-remote/monitoring_patterns.md` §7) to re-check.
+  (never auto-act — principle #9); for cross-session safety use the current host's verified reminder/
+  automation capability only to re-wake or poll a hosted tracker. A cloud reminder cannot SSH with a
+  local key; provider mappings → `references/run-remote/monitoring_patterns.md` §7.
 - **GEN2 — SSH drop kills the run (no tmux).** Symptom: training dies the moment the laptop sleeps or
   the network blips. → Root cause: the job is a child of the SSH shell; the drop sends SIGHUP.
   → Fix: launch inside `tmux` (or `nohup … & disown`) **before** the long run starts — not after it is

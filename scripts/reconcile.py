@@ -12,14 +12,14 @@ It REPORTS drift; it does not edit anything. Pure stdlib, no network, no third-p
 
 How a reported number is associated with an authoritative metric
 ----------------------------------------------------------------
-For each authoritative claim, an "anchor" is the metric's human keyword -- the last
-alphanumeric token of the metric key (e.g. metric `psnr_set5` -> anchor `psnr`), plus any
-explicit `aliases` listed on the claim. Within a configurable character window after an anchor
-occurrence in the doc, every numeric token is compared to the authoritative value. A token that
-differs (beyond a small float tolerance) is a drift. A token equal to the authoritative value is
-clean. This is deliberately a lightweight heuristic, not a parser: it catches the common
-transcription drift (31.42 mis-typed as 31.50 / 31.41) without trying to understand arbitrary
-prose. Tune sensitivity with --window; raise/lower equality strictness with --rtol / --atol.
+For each authoritative claim, explicit `aliases` are the preferred anchors. When aliases are
+present they REPLACE the generic metric anchor, which prevents multiple PSNR claims from being
+cross-compared. Without aliases, the leading metric token is used (`psnr_set5` -> `psnr`). Only
+the FIRST standalone numeric token after an anchor is compared; variance, sample count, epoch,
+and table numbers later in the same sentence are not reinterpreted as the metric value. This is
+deliberately a lightweight heuristic, not a parser. It reports drift but cannot prove that an
+omitted claim should have appeared in a particular document; use stable, dataset-qualified aliases
+or generate documents from the evidence layer for that stronger contract.
 
 EVIDENCE.json shape (only the fields this tool needs; see evidence-manifest-schema):
     {
@@ -126,10 +126,13 @@ def _load_claims(evidence_path: Path) -> list[_Claim]:
             parts = [p for p in re.split(r"[^0-9A-Za-z]+", str(metric)) if p]
             # prefer the first token that contains a letter (skip a leading numeric, unusual but safe)
             lead = next((p for p in parts if any(ch.isalpha() for ch in p)), parts[0] if parts else str(metric))
-            anchors.append(lead.lower())
-            # explicit aliases on the evidence row AND/OR the parent claim (kept whole, lowercased)
-            for a in list(ev.get("aliases", []) or []) + list(claim_aliases):
-                anchors.append(str(a).lower())
+            # Explicit aliases are claim-disambiguating and therefore replace the generic lead.
+            # Falling back to the lead remains useful for a single unambiguous metric.
+            explicit_aliases = list(ev.get("aliases", []) or []) + list(claim_aliases)
+            if explicit_aliases:
+                anchors.extend(str(alias).lower() for alias in explicit_aliases)
+            else:
+                anchors.append(lead.lower())
             # de-dup, preserve order
             seen: set[str] = set()
             anchors = [a for a in anchors if not (a in seen or seen.add(a))]
@@ -166,7 +169,7 @@ def reconcile(
     """Return every reported value in `docs` that diverges from EVIDENCE.json's authoritative value.
 
     For each scalar claim, scan each doc line; wherever an anchor keyword appears, inspect the
-    numeric tokens within `window` characters after it. A number that does not equal the
+    first standalone numeric token within `window` characters after it. A number that does not equal the
     authoritative value (within rtol/atol) is recorded as a Drift. A number equal to it is clean.
     """
     evidence_path = Path(evidence_path)
@@ -187,26 +190,29 @@ def reconcile(
                             break
                         start = idx + len(anchor)
                         seg = line[idx : idx + len(anchor) + window]
+                        reported_value: float | None = None
                         for m in _NUM.finditer(seg):
                             # Skip a number glued to a letter ("Set5", "v2", "H264"): it is part
                             # of an identifier/dataset name, not a reported metric value. A real
                             # value is preceded by whitespace or a separator (= : ( , ~), not [A-Za-z].
                             if m.start() > 0 and seg[m.start() - 1].isalpha():
                                 continue
-                            val = _parse_num(m.group(0))
-                            if val is None:
-                                continue
-                            if not _values_equal(val, claim.value, rtol, atol):
-                                drifts.append(
-                                    Drift(
-                                        doc=str(doc),
-                                        line=lineno,
-                                        metric=claim.metric,
-                                        authoritative=claim.value,
-                                        reported=val,
-                                        context=seg.strip()[:120],
-                                    )
+                            reported_value = _parse_num(m.group(0))
+                            if reported_value is not None:
+                                break
+                        if reported_value is not None and not _values_equal(
+                            reported_value, claim.value, rtol, atol
+                        ):
+                            drifts.append(
+                                Drift(
+                                    doc=str(doc),
+                                    line=lineno,
+                                    metric=claim.metric,
+                                    authoritative=claim.value,
+                                    reported=reported_value,
+                                    context=seg.strip()[:120],
                                 )
+                            )
     return drifts
 
 
