@@ -1,4 +1,4 @@
-﻿> Applies to both local and remote runs.
+> Applies to both local and remote runs.
 
 # Throughput & profiling — make training FAST, find the one bottleneck
 
@@ -23,7 +23,7 @@ To jump: `grep -in '<keyword>' references/training/throughput-profiling.md` (e.g
 - **Free / near-free knobs** — T9 TF32 + matmul precision · T10 cudnn.benchmark · T11 channels_last · T12 set_to_none + disable debug APIs
 - **Mixed precision for speed** — T13 bf16/fp16 throughput
 - **Kernels** — T14 SDPA / FlashAttention · T15 torch.compile gains · T16 torch.compile recompilation traps
-- **Memory↔speed trades** — T17 activation checkpointing speed cost · T18 batch size vs throughput
+- **Memory↔speed trades** — T17 activation checkpointing speed cost · T18 batch size vs throughput · T18b spare-VRAM audit on metered GPUs
 - **Profilers** — T19 torch.profiler (is-it-data-bound) · T20 nsys / Nsight Systems · T21 py-spy (live, no restart) · T22 memory-snapshot pointer
 - **Multi-GPU / multi-node comms** — T23 DDP/FSDP compute-comm overlap
 - **Pointers** — gotchas_universal.md U8/U21/U24/U25/U38 · oom-memory.md · distributed-launch.md · multinode.md · references/verifying/methodology.md (skill)
@@ -320,6 +320,23 @@ batches under-fill Tensor Cores and amortize launch/sync overhead poorly).
 result depends on it (`batch 4 × accum 16` beats `batch 1 × accum 64` — oom-memory.md M5). Accuracy/effective-
 batch implications (LR scaling, accumulation loss-weighting) → references/verifying/methodology.md (**REQUIRED**).
 Sizing alongside a concurrent job + `expandable_segments` = **gotchas_universal.md U10** / oom-memory.md M8.
+
+### T18b — Spare VRAM on a metered GPU is unspent speed (audit it, don't idolize 100%)
+
+**Symptom**: `nvidia-smi` shows VRAM sitting well under capacity (e.g. 14 GB of 32 GB) for the whole
+run on a per-hour instance, and nobody can say why. The waste is not the idle memory itself — it is
+the speed that memory could have bought.
+
+**Fix**: treat sustained low VRAM as a trigger for one deliberate audit, in this order: (1) activation
+checkpointing on although the model fits → turn it off, ~25% free speedup (T17); (2) micro-batch far
+below the memory wall → raise it, shrinking grad-accum to keep the effective batch pinned (T18/M5);
+(3) offload/low-mem flags (`device_map`, ZeRO offload, `low_cpu_mem_usage` paths) carried over from a
+smaller box → drop them. Only change the *effective* batch when the run is not part of a pinned
+comparison, then re-scale LR per references/verifying/methodology.md (**REQUIRED**). Stop at ~85–90%
+VRAM — fragmentation, eval peaks, and shape variance own the rest; a mid-run OOM on a rented box costs
+more than the last GB ever pays. The target metric is **throughput per rented hour** (samples/s,
+tokens/s), never VRAM% — 44% VRAM with SMs saturated is a healthy run; 100% VRAM with SMs starved is a
+slow one wearing a full costume.
 
 ---
 
