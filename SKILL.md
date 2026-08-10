@@ -1,27 +1,9 @@
 ---
-name: remote-gpu-trainer
-description: |
-  Use when a user runs, debugs, verifies, or ships a DL experiment on a GPU they OWN or RENT (AutoDL,
-  RunPod, vast.ai, Lambda, Paperspace, 恒源云/矩池云/Featurize/揽睿星舟, bare SSH, Slurm, K8s;
-  single/multi-instance). Triggers (multilingual): 本地训练/local training, 远程 GPU 训练/租卡/GPU rental,
-  spot 抢占/preemption, 断点续训/resumable, 防 SSH 断线/tmux 守护, 多实例 ablation,
-  关机/销毁/stop-vs-terminate billing, checkpoint 磁盘满, CUDA OOM/显存不足, loss NaN/spike/不收敛,
-  overfit 单 batch, FSDP/DeepSpeed/torchrun, 多卡 hang, 训练太慢/GPU util 低, dataloader/数据增广 bug;
-  消融结果异常/ablation looks wrong, 复现/reproducibility, 数据泄漏/leakage/test-set tuning,
-  mAP=0/全零指标, 输出恒定/model-ignores-input, train-good/val-collapse, 对比不公平/unfair baseline,
-  单 seed/no error bars, loss 太好/too-good-to-be-true, 跨文档对账/cross-doc drift;
-  交付产物/deliverable, 唯一真源/single source of truth, best ckpt 拉回, 结果可视化/论文图脚本,
-  manifest/provenance, 一键复现/repro, EVIDENCE.json. NOT for multi-cloud price-shopping + auto
-  spot-recovery (SkyPilot), BYOC dev environments (dstack), or zero-ops serverless inference (Modal).
+name: "remote-gpu-trainer"
+description: "Use when running, debugging, verifying, or delivering a deep-learning experiment on an owned or rented GPU, especially AutoDL or a remote SSH host; also use for Windows + Clash/Mihomo high-port SSH banner timeouts, fake-IP, or TUN routing interference. Covers launch, checkpoint/resume, detached monitoring, OOM/NaN/convergence/data-loader failures, multi-GPU hangs, ablations, result verification, pull/teardown safety, and canonical export closure. Routes durable replicas to mirror-research-artifacts. Triggers: owned/rented GPU, AutoDL, SSH, Windows Clash/Mihomo, banner timeout, fake-IP, TUN, train/debug/verify/pull/export, 远程GPU训练/租卡, 断点续训, 消融复现, checkpoint 拉回."
 license: MIT
-compatibility: |
-  Any Agent-Skills (SKILL.md)-compatible agent — Claude Code, Codex, Cursor, Trae, Gemini CLI, etc.
-  RUN needs a shell (+ SSH or a platform CLI/API for the remote path); scripts are bash/python. VERIFY
-  and DELIVER are platform-agnostic and need only a shell + the project's results. A few durable-monitoring
-  recipes assume a host background-task runner + scheduler — map them to the running agent's equivalents
-  (references/run-remote/monitoring_patterns.md §7).
 metadata:
-  last-model-review: "2026-07-19 Fable-5 library review - POLISH 2 fixed (bundled-resources enum, P6-DROPPED visible) + U44 ship-back __main__ guard, AutoDL nohup gateway-kill ruling, waiter re-arm, ssh short-command, f-string <3.12 qualifier"
+  last-model-review: "2026-08-10 AutoDL canonical export and generic mirror handoff; preserves 2026-07 lifecycle review findings (day completed from aca1c467, which rewrote the description and added the Windows/Clash SSH gate — the bare 2026-08 form is unparseable to the staleness hook)"
 ---
 
 # remote-gpu-trainer — the DL Experiment Lifecycle
@@ -36,6 +18,10 @@ One skill for the whole arc of a DL experiment: **RUN → VERIFY → DELIVER.**
   outlive the instance, and stop the meter safely*, not to provision a cluster. Platform-specific at the
   edges (one `profiles/<platform>.md` owns every path, proxy, billing verb, and spot rule), invariant at
   the core.
+- **Remote ownership boundary** — this skill is the **compute/control layer**: it binds inputs, runs and
+  verifies compute, and closes one run into `export/<run-id>`. Long-term project organization belongs to
+  `research-artifact-hygiene`; any durable/local/cloud mirror begins only at a validated export and belongs
+  to the generic `mirror-research-artifacts` skill. Never mirror a mutable `active/` tree.
 - **VERIFY** — *is this number a bug, a real effect, or noise?* A surprising result is a hypothesis, not
   a fact to report. Platform-agnostic.
 - **DELIVER** — organize the result so every shipped number/figure/table is a *deterministic function of
@@ -54,10 +40,10 @@ user from shipping). Mantra: **"disclose it, or don't claim it."**
    - **Local** (a workstation/laptop you own, no meter) → `references/run-local/` and `profiles/local.md`.
    - **Rented / remote** (any metered or shared box you don't own) → `references/run-remote/`, and pick
      your **`profiles/<platform>.md`** FIRST (it owns every path/verb/proxy the phases delegate to).
-2. **Then ALWAYS** → **VERIFY** the result (`references/verifying/`) → **DELIVER** it
-   (`references/delivering/`). These two are platform-agnostic; they run the same whether the job trained
-   locally or on a rental. Skip nothing here just because the run succeeded — a green run is not a real
-   number, and a real number is not yet a clean deliverable.
+2. **Then ALWAYS** → **VERIFY** the result (`references/verifying/`). A green run is not a real number.
+3. When publication synthesis is requested, optionally consult `references/delivering/` for
+   **legacy/non-canonical publication synthesis guidance**. It never defines the artifact layout: canonical
+   runs, hardware evidence, trust records, figures and tables belong to `research-artifact-hygiene`.
 
 > Already debugging a model that won't converge / OOMs / hangs / NaNs, regardless of where it runs? Jump
 > straight to **`references/training/`** (the 8-file debug layer), then come back to VERIFY before you report.
@@ -79,6 +65,31 @@ lifecycle) is in **`references/run-remote/principles.md`** — read it before Ph
 - **Cost and destructive actions are the user's call.** Never auto-release/terminate, never delete durable
   files without confirmation; if cleanup can't free space, ask to expand the disk, don't silently shrink
   the experiment.
+- **Execution permission is not task authority.** Sandbox / Full Access only controls whether a command
+  can run. Keep operational authority and scientific promotion separate: once a bounded, non-overwriting
+  delivery objective is authorized, same-scope diagnostics, verifier/schema version bumps, tests, hashes,
+  and control-plane repairs do **not** require a fresh confirmation merely because they mint a new immutable
+  ID. Re-ask for new billable compute, destructive/irreversible actions, science-protocol changes, metric
+  promotion, publication, or any other material scope expansion. A standing unattended contract applies
+  only after its own activation rule is satisfied.
+- **Make the control plane cheap and the data plane rare.** Validate small schemas, identities, paths, and
+  contract hashes before rereading multi-GB bundles. A synthetic fixture may test rejection behavior but
+  may never invent the producer's positive schema; freeze a redacted real-shape fixture and prove its test
+  is live. Recompute every large payload once per trust boundary—producer, independent remote acceptance,
+  and local pull—not once per wrapper or verifier revision.
+- **One-way run closure.** Mutable work stays under `active/<run-id>`; only a validated capsule may move
+  from `export/.partial/<run-id>` to `export/<run-id>`, and failed closeouts move to `quarantine/`.
+  AutoDL binds this exactly as
+  `/root/autodl-tmp/<project>/{cache,active,export/.partial,export/<run-id>,quarantine}`. A closed export is
+  fully isomorphic to canonical local `runs/<run-id>`: `run.json`, `config.yaml`, `train.csv`, `best.pth`,
+  optional frozen `last.pth`, and `test/<test-id>/{metrics.json,results.parquet,vis/<condition-id>/<task-native-role>/<sample-id>.png}`.
+  Every declared software test must include visualization coverage for all declared conditions × task-native
+  roles × K fixed selected samples. Real capture/hardware results never enter this software capsule; close
+  them separately as `export/hardware/<hardware-run-id>` (capture/decode/model-run bindings, no copied
+  weights) or hand them to `research-artifact-hygiene`. A hardware test without machine-readable ground truth
+  must declare that status and metric non-applicability; it keeps finite-forward rows and prediction/overlay
+  visuals but never invents ground truth or GT-derived metrics. Caches and whole active trees never cross a
+  mirror boundary. Layout and gates → `references/run-remote/artifact-layout.md`.
 - **Before teardown, prove the evidence outlives the host.** Teardown is irreversible and *"I scp'd it
   back"* is just another log line. The gate is not "files copied" but **"every number I reported
   re-reads from the local copy"** — diff each claim against the pulled artifact, then write a
@@ -112,6 +123,14 @@ phases delegate to. Mental verb model (one API across platforms; the profile bin
 commands): `up` (rent+reach) → `push` (code/data on) → `run` (detached + checkpointing) → `watch`
 (durable monitor) → `pull` (results off + verify) → `down` (stop the meter).
 
+**Windows + Clash/Mihomo high-port SSH gate.** Use **OpenSSH direct first** with strict host-key
+checking. A **Paramiko fallback** is allowed only after recorded `banner_timeout`, `fake_ip`, or
+`tun_interference` evidence; it must use a DoH-selected address and Windows `IP_UNICAST_IF` on the
+single socket handed to the SSH transport. Never treat authentication failure, host-key mismatch,
+connection refusal, or an unexplained error as proxy evidence. Never mutate system routes, DNS,
+proxy settings, or Clash/Mihomo configuration. Full parameterized decision ladder and offline planner
+→ `references/run-remote/ssh_transport.md` §4A.
+
 | You're on… | Profile | Meter-stop verb (the trap) |
 |---|---|---|
 | AutoDL (deepest, battle-tested) | `profiles/autodl.md` | 关机 stops meter, **keeps disk** (the AutoDL exception) |
@@ -123,15 +142,18 @@ commands): `up` (rent+reach) → `push` (code/data on) → `run` (detached + che
 | Bare SSH / Slurm / K8s / Colab | `profiles/generic-ssh.md` | **manual** (a forgotten box bills 24/7) |
 
 **The 6-phase lifecycle** (full per-platform checklist → `references/run-remote/lifecycle_checklist.md`):
-**0** env audit (`df -i` not just `df -h`, cgroup `memory.max`, checkpoint disk budget) · **1** SSH +
+**0** env + storage-layout audit (`df -i` not just `df -h`, cgroup `memory.max`, checkpoint/inode budget) · **1** SSH +
 credentials (the prebuilt image **is** the env — don't `conda create` on a rental; secrets via stdin) ·
-**2** wrapper + **CPU-smoke gate before renting** · **3** detached launch (probe, then hand back — never
+**2** identity-bound inputs + isolated active run + **CPU-smoke gate before renting** · **3** detached launch (probe, then hand back — never
 a blocking `sleep`) · **4** durable monitoring (the four-layer architecture →
 `references/run-remote/monitoring_patterns.md`; a session-bound watcher dies with the session) · **5**
-aggregate + verify + teardown.
+close `active → export`, verify/pull or hand the closed export to the generic mirror skill, then teardown.
 
 > **Iron Law — teardown gate:** NO `release` / `terminate` / `destroy` / file-delete until the remote
-> durable result root has an immutable `PULL_MANIFEST.json` built from an explicit expected roster,
+> durable result root has an external immutable `PULL_MANIFEST.json` built by
+> `scripts/aggregate_to_fs.sh` + `scripts/build_pull_manifest.py` from an explicit expected roster
+> (never embedded in canonical `run.json`; the mirror workflow's custody manifest is an additional
+> layer, not a replacement for this one),
 > the pull matches that exact roster + every byte size + SHA-256, every checkpoint loads, and
 > `scripts/verify_local.py` writes local `PULL_VERIFIED.json`; then the user must still explicitly
 > approve the cost-affecting action. A directory count, a size heuristic, an old loadable checkpoint,
@@ -139,6 +161,7 @@ aggregate + verify + teardown.
 > meter-stopping action is **irreversible** (deletes the disk) — confirmation matters more, not less.
 
 Other remote references: `ssh_transport.md` (rsync/scp resumable, secrets-via-stdin, CRLF) ·
+`artifact-layout.md` (active/export/quarantine boundary, canonical capsule and atomic-close contract) ·
 `spot-resilience.md` (preemption grace, Young/Daly cadence, atomic-write resume) · `china-network.md`
 (mirrors + `HF_ENDPOINT` + the `no_proxy` trap) · `parallel_ablation.md` (fan-out independence +
 reconciliation) · `multinode.md` (NCCL/fabric, advanced) · `production-matrix-acceptance.md`
@@ -177,32 +200,33 @@ Stance: **audit → disclose** — surface an integrity issue with the conclusio
 > **State the metric's direction when comparing** (PSNR/SSIM/mAP ↑ better; LPIPS/NMSE/loss ↓ better) —
 > never assume. Tracker forensics / pruning duplicate runs → `scripts/wandb_forensics.py`.
 
-## DELIVER — organize → single source → figures
+## DELIVER — legacy/non-canonical publication synthesis guidance
 
-Make the deliverable a deterministic function of one immutable, versioned evidence layer; lock provenance
-and cross-document consistency by **mechanism**, not by hand. Eight principles, tiered
-(`references/delivering/principles.md`):
+On a remote rental, delivery ends at the validated closed `export/<run-id>` capsule. Do not turn the compute
+host into the long-term project archive, figure workshop or mirror manager; hand canonical organization to
+`research-artifact-hygiene` and replicas to `mirror-research-artifacts`.
 
-- **CORE (wire from the first real number)** — **P1** evidence/presentation layers cleanly separated
-  (zero hand-typed numbers in the presentation layer) · **P2** numbers **generated** from `results.json`,
-  not transcribed (so a stale number is *physically impossible*) · **P3** content-addressed + append-only
-  immutable runs (re-run mints a new `<run-id>`, never overwrites) · **P7** figure-chain traceability
-  (`results.json → source_data.csv → figure` + `.provenance` sidecar) + the **pixel re-open gate** (a
-  figure that *saved* is not a figure that's *correct*) · **P8** delivery = a **disclosure** gate, not a
-  blocking one.
-- **Advanced (flip on near submission — YAGNI applies to provenance too)** — **P4** data/split versioned
-  + hash-pinned (leakage becomes machine-checkable) · **P5** one-command repro from a clean clone
-  (`scripts/repro.sh.template`). (P6 — fixed showcase samples — deliberately **DROPPED**: sample selection
-  is the user's call.)
+The `references/delivering/` group is retained only for publication-synthesis principles such as
+generated-not-transcribed reporting, claim reconciliation, disclosure and pixel re-open QA. **It is not an
+artifact-layout authority.** Any directory/manifest example there that differs from
+`research-artifact-hygiene` is legacy and non-canonical.
 
-Mechanics: the on-disk tree → `references/delivering/data-architecture.md`; the two manifest schemas →
-`references/delivering/evidence-manifest-schema.md`; the one-folder-per-figure convention + pixel gate →
-`references/delivering/figures.md`; the per-number disclosure checklist → `references/delivering/delivery-gate.md`; the artifact/data completeness reconciliation that must pass *before* that gate — every result row's ckpt↔split↔input-data↔figure chain proven present, cleanup distinguished from organization → `references/delivering/completeness-reconciliation.md`.
+For synthesis, read evidence from canonical `runs/<run-id>/test/<test-id>/{metrics.json,results.parquet,vis/}`
+or `hardware/runs/<hardware-run-id>/test/<test-id>/...`; never create a parallel `results/<exp-id>/runs/`
+tree, checkpoint subdirectory, qualitative tree or selected symlink. Figures/tables use the canonical flat
+workshops (`figure.json`/`table.json`, root-level source, `build.py`, `final.*`) rather than README portals,
+nested output directories or provenance sidecars. The fixed selection roster remains the canonical
+`run.json`-bound `_trust/selections` manifest; a publication montage may cite existing atomic PNGs but may
+not redefine the run's visualization roster.
 
-> **`EVIDENCE.json` is the project-level single source of truth** — a machine-readable claims↔evidence map
-> (each claim ← the supporting exp-id / metric / figure + a paper anchor + the repo `file:line`).
-> `scripts/reconcile.py` greps the whole repo against its authoritative values to catch cross-document drift;
-> `scripts/manifest_scaffold.py` stamps the structure.
+This skill owns one execution attempt, not project-wide closeout state. Route authorization gates, node
+queues/heartbeats, legacy checkpoint acceptance, and the separate training/evaluation/pull/paper axes to
+`supervise-research-closeout`; that controller must call this skill rather than duplicate its SSH or trainer logic.
+
+Legacy synthesis navigation: `references/delivering/data-architecture.md` states the boundary and current
+flat-workshop mapping; `principles.md`, `figures.md`, `delivery-gate.md` and
+`completeness-reconciliation.md` provide advisory synthesis/QA checks only. None may override canonical
+paths, manifests or retention rules.
 
 ## Companion skills (all OPTIONAL — this skill is standalone)
 
@@ -210,8 +234,8 @@ Recommended separate installs that deepen RUN / VERIFY / DELIVER; **the skill ne
 fully standalone. One-line-each list, what each adds, and the no-companion fallback →
 **`references/companions.md`**. In short: figure drawing (nature-figure),
 data availability (`nature-data`), experiment verification (the `experiment-verifier` agent), parallel ablation
-(`superpowers:dispatching-parallel-agents`), HF transport + hosted tracker
-(`huggingface-skills:hf-cli` / `huggingface-trackio`), and — one layer above — an idea→conclusion
+(`superpowers:dispatching-parallel-agents`), durable artifact mirroring
+(`mirror-research-artifacts`), and — one layer above — an idea→conclusion
 orchestrator (`auto-research-pipeline`: human gates + stage wiring; this skill executes, that one decides
 when each stage fires and what a human signs).
 
@@ -230,10 +254,12 @@ re-verify any teardown/billing fact against current docs before betting money or
 Load only what the current phase needs (the body sections above name the individual files).
 
 - `references/run-local/` — **own-a-box**: env-hygiene · launch · multi-gpu · local-oom.
-- `references/run-remote/` — **rented-box**: principles · lifecycle_checklist · monitoring_patterns · ssh_transport · spot-resilience · china-network · parallel_ablation · multinode · production-matrix-acceptance · gotchas_universal (U1–U44).
+- `references/run-remote/` — **rented-box**: principles · lifecycle_checklist · artifact-layout · monitoring_patterns · ssh_transport · spot-resilience · china-network · parallel_ablation · multinode · production-matrix-acceptance · gotchas_universal (U1–U44).
 - `references/training/` — the **DL-training debug layer** (8 files; local/remote-agnostic) — routed above.
 - `references/verifying/` — **is-the-number-real**: methodology · representation-collapse · smoke-hidden-failures.
-- `references/delivering/` — **deliverable**: principles · data-architecture (+`EVIDENCE.json`) · evidence-manifest-schema · figures · delivery-gate · completeness-reconciliation.
+- `references/delivering/` — **legacy/non-canonical publication synthesis guidance only**: advisory
+  principles · canonical-boundary data-architecture · historical manifest/figure notes · delivery gate ·
+  completeness reconciliation. `research-artifact-hygiene` owns every canonical path and schema.
 - `references/companions.md` (optional skills + fallbacks) · `references/self-improvement.md` (capture-a-gotcha loop).
 - `profiles/<platform>.md` — per-platform substrate (7 rental profiles + `local.md`; `_schema.md` = the fields).
 - `scripts/` — wrappers (`run_one`/`run_queue`), monitors (`mem_monitor`, `gpu_health`, `health_patrol.sh.template`, `reap_vram_zombies.sh`),

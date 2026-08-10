@@ -8,6 +8,7 @@ skill, at the documented location, with the expected entry IDs / keywords intact
   - every `expect_files` path exists
   - every `expect_ids` appears as a `### <ID>` header in one of those files
   - every `expect_grep` keyword appears (case-insensitive) in one of those files
+  - every `reject_each_grep` keyword is absent from each `reject_each_files` path
 
 This is the cheap, no-API-key tier: it does NOT prove an agent *navigates* there
 (that is the agentic tier — see RESULTS.md), and it does NOT prove the platform
@@ -20,6 +21,7 @@ Usage:  python evals/run_evals.py            # exits 1 if any case fails
 """
 import json
 import re
+import runpy
 import sys
 from pathlib import Path
 
@@ -52,6 +54,24 @@ def main():
         for kw in c.get("expect_grep", []):
             if kw.lower() not in low:
                 problems.append(f"missing keyword: {kw!r}")
+        for f in c.get("expect_each_files", []):
+            p = REPO / f
+            if not p.exists():
+                problems.append(f"missing per-file marker target: {f}")
+                continue
+            body = p.read_text(encoding="utf-8").lower()
+            for kw in c.get("expect_each_grep", []):
+                if kw.lower() not in body:
+                    problems.append(f"{f}: missing per-file keyword: {kw!r}")
+        for f in c.get("reject_each_files", []):
+            p = REPO / f
+            if not p.exists():
+                problems.append(f"missing per-file rejection target: {f}")
+                continue
+            body = p.read_text(encoding="utf-8").lower()
+            for kw in c.get("reject_each_grep", []):
+                if kw.lower() in body:
+                    problems.append(f"{f}: forbidden per-file keyword: {kw!r}")
         status = "PASS" if not problems else "FAIL"
         if problems:
             failed += 1
@@ -61,7 +81,14 @@ def main():
         for pr in problems:
             print(f"         - {pr}")
     print(f"\n{passed}/{passed + failed} cases reachable" + ("" if not failed else f"  ({failed} FAILED)"))
-    return 1 if failed else 0
+    offline_failed = 0
+    try:
+        contract = runpy.run_path(str(CASES.parent / "test_windows_ssh_transport.py"))
+        offline_failed = int(contract["main"]())
+    except Exception as exc:  # fail closed when the offline contract cannot even load
+        offline_failed = 1
+        print(f"[FAIL] offline Windows SSH transport contract: {exc}")
+    return 1 if failed or offline_failed else 0
 
 
 if __name__ == "__main__":

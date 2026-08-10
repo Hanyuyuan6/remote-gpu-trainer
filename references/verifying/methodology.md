@@ -216,7 +216,8 @@ One result lives in many places — paper, thesis, slides, rebuttal, README, res
 
 - **One source of truth = the artifact it is computed from** (results JSON / checkpoint eval), not whichever document was edited last. Re-derive the headline from that artifact (principle 1) before trusting any document's copy of it.
 - **Diff the shared values across all artifacts before submission.** Grep each reported number / method name / dataset size / citation across paper + thesis + slides + rebuttal + README + CSV; every occurrence must match the source. **A correction is not done until it lands in all of them.**
-- **Highest-drift items**: the lead metric and its delta, method / dataset names, param·FLOP counts, sampling rate / compression ratio, and *any number that was ever corrected* (a corrected number is the one most likely still stale somewhere).
+- **Highest-drift items**: the lead metric and its delta, method / dataset names, param·FLOP counts, sampling rate / compression ratio, and *any number that was ever corrected* (a corrected number is the one most likely still stale somewhere). Beyond numbers, the same rule governs **page counts, author lists, and version strings** — they live in as many places and drift as silently.
+- **Search where no gate looks.** The grep above must reach past the compiling corpus into release metadata (arXiv comments, CITATION.cff, model cards), project memory, generated reports, packaged copies, and the delivery directory. Every recurrence of this failure in practice has been in a file no automated check reads: a submission copy that never got rebuilt, an arXiv comment string still quoting the old supplementary page count.
 
 This is principle 4 (trust the artifact, not a document's copy of it) and principle 6 (a number you cannot re-derive is not a result) applied across the whole corpus.
 

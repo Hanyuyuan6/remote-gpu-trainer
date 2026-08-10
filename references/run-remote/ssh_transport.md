@@ -14,6 +14,7 @@ To jump: `grep -in '<keyword>' references/run-remote/ssh_transport.md` (e.g. `ke
 2. Push the public key to an instance
 3. `~/.ssh/config` alias + keepalive tuning
 4. Verify the alias
+4A. Windows + Clash/Mihomo high-port decision ladder
 5. Resumable copy — rsync vs scp, and WHY rsync
 6. Bulk per-dir download loop
 7. Move secrets via stdin — never inline a key, never on a durable FS
@@ -114,6 +115,104 @@ done
 Each should print a distinct hostname. Then the env probe (SKILL.md Phase 1):
 `ssh <alias> 'python -c "import torch;print(torch.cuda.is_available())"'`.
 
+## 4A. Windows + Clash/Mihomo high-port decision ladder
+
+Use this branch when a Windows client reaches an AutoDL-style high SSH port while Clash/Mihomo is
+running. Keep it per-process and parameterized: hostname, port, user, identity file, DoH resolver,
+selected IP, Windows interface index, timeouts, fingerprints, receipt paths and session ID all come
+from the current run contract. Never paste today's NIC, address, port or key into this skill or a
+reusable script.
+
+### Decision gate: OpenSSH direct first
+
+1. Run **OpenSSH direct first** with a session-scoped known-hosts file, `StrictHostKeyChecking=yes`,
+   bounded connect/banner timeouts and verbose output captured to an evidence file. Do not start with
+   Paramiko merely because Clash/Mihomo is installed.
+2. If direct OpenSSH succeeds, keep it. Do not introduce a second transport.
+3. Authorize a **Paramiko fallback** only when the captured evidence class is exactly one of:
+   `banner_timeout` (TCP connects but the SSH identification/banner never arrives), `fake_ip` (the
+   system resolver result is shown to be a Clash/Mihomo fake-IP or disagrees with a hashed DoH answer),
+   or `tun_interference` (read-only route/interface evidence identifies the TUN path).
+4. Refuse fallback for `auth_failed`, `host_key_mismatch`, `connection_refused`, a generic connect
+   timeout, or `other_error`. Those are credential, identity, service-state or unknown failures;
+   changing the Python SSH library would hide the cause rather than fix it.
+
+The deterministic decision gate is **offline only**:
+
+```powershell
+python scripts/plan_windows_ssh_transport.py --input <evidence.json> --output <plan.json>
+```
+
+It parses already-captured evidence and emits a plan. It performs no DNS query, socket connection,
+SSH authentication, route edit, proxy edit or forward-test.
+
+The input carries explicit `connect_seconds` and `banner_seconds` bounds. The planner recomputes the
+canonical SHA-256 of the structured OpenSSH evidence and rejects a declared digest that does not match;
+each fallback class also has its own minimum evidence shape. Secret-shaped fields are rejected. This proves
+the plan is bound to the supplied offline record, not that the original observation was honestly captured;
+retain the source capture separately when that distinction matters.
+
+### DoH real IP without system mutation
+
+Query a user-selected DNS-over-HTTPS endpoint outside this script, record the response bytes/hash and
+select one IPv4 answer for the current session. Bind the evidence to the logical hostname, high port,
+resolver URL and observation time. The selected address is a transport destination only; SSH host-key
+identity remains bound to the logical host + port and the pinned fingerprint.
+
+The resolver URL must use HTTPS. Store the normalized answer roster in the planner input, bind it by a
+recomputed canonical SHA-256, and require the selected IPv4 address to be a member of that hashed roster.
+
+Do not call `Set-DnsClientServerAddress`, add/delete routes, change WinHTTP or environment proxies,
+disable TUN, or rewrite Clash/Mihomo configuration. This is a **no system route/DNS/proxy mutation**
+contract. Read-only DNS, interface and route snapshots are evidence; they are not authorization to
+alter the machine.
+
+### One Windows socket, then Paramiko
+
+When fallback is authorized, create one IPv4 socket, apply Windows `IP_UNICAST_IF` using the current
+interface index, connect that socket to the DoH-selected IP and high port, and pass that **single
+connected socket** to `paramiko.Transport`. Do not let Paramiko resolve the hostname or open a second
+socket, because that would discard the interface binding and re-enter the fake-IP/TUN path.
+
+Implementation shape (values remain parameters; this is not executed by the bundled planner):
+
+```python
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(connect_timeout_s)
+sock.setsockopt(socket.IPPROTO_IP, socket.IP_UNICAST_IF,
+                struct.pack("!I", interface_index))
+sock.connect((doh_selected_ip, ssh_port))
+transport = paramiko.Transport(sock)  # the same connected socket
+transport.start_client(timeout=banner_timeout_s)
+presented_key = transport.get_remote_server_key()
+# compare presented_key fingerprint with the reviewed pin/receipt BEFORE authentication
+```
+
+`IP_UNICAST_IF` is Windows-specific. Do not emulate it by changing the global route table. Close the
+socket/transport on every error and create a fresh single socket for a new attempt.
+
+### Host identity: pinning first, session TOFU only with a receipt
+
+Require **strict host-key pinning** whenever the provider console or another authenticated channel
+supplies the fingerprint. OpenSSH uses a session-specific `UserKnownHostsFile` plus
+`StrictHostKeyChecking=yes`; Paramiko compares `get_remote_server_key()` to the same expected
+fingerprint before authentication. Never use `AutoAddPolicy`.
+
+If no authenticated fingerprint exists, a **session TOFU receipt** is the explicit weaker fallback.
+Record session ID, logical hostname, port, DoH-selected IP, key type/fingerprint, observed time,
+evidence hashes and the fact that first-contact MITM protection was unavailable. Review it once, create
+the session known-hosts pin, and require exact equality on every later connection in that session. A
+session TOFU receipt is not an out-of-band identity proof and must not silently become a permanent
+global trust entry.
+
+The planner requires either a pinned fingerprint + known-hosts file or the complete session receipt
+fields. It validates a real 32-byte SSH SHA-256 fingerprint shape and recomputes the receipt hash after
+binding session ID, logical host, port, selected IP, key type, fingerprint, observation time and direct
+evidence hash. Every receipt explicitly records `first_contact_mitm_unavailable=true`; a fallback receipt
+also binds the DoH response hash and selected IP. The same complete receipt gate applies to direct OpenSSH
+and Paramiko fallback. Its output always declares `system_mutations: []`; `identity_file` is validated as a
+single-line path, raw key material and secret-shaped input fields are rejected, and no credential value is copied.
+
 ## 5. Resumable copy — rsync vs scp, and WHY rsync
 
 `scp` opens **one** SSH stream for the whole transfer and **cannot resume**: any blip mid-copy aborts
@@ -143,6 +242,26 @@ online) or use the §6 loop.
 
 > The bulk-download stall-retry ladder (HF/ModelScope mirror swaps, `timeout … && break` loops) is a
 > *download-from-the-internet* concern, not host↔host copy — that lives in `references/run-remote/china-network.md`.
+
+### Network-durable source → node-local transport cache
+
+When the authoritative bundle sits on a FUSE/network/shared mount, copying it directly over WAN can make
+remote metadata latency the bottleneck. Use a unique **node-local transport cache** without confusing it
+with a durable replica:
+
+1. Freeze the durable source roster, bytes and SHA-256 first.
+2. Copy into a new node-local staging path; reject symlinks/path escapes and re-verify the same roster and
+   hashes before transport. Never move, edit or delete the durable source.
+3. Keep large checkpoints as separate resumable files. For hundreds of small control/evidence files, build
+   one deterministic tar from an explicit relative-path list; record empty directories separately because
+   a file-only pull manifest cannot imply them.
+4. Transfer the tar and checkpoints, then extract into a unique local staging root and run the normal exact
+   roster/bytes/SHA gate once. The node-local cache is an acceleration layer, not a second durable copy.
+
+Do not assume compression helps a multi-GB checkpoint—many PyTorch files are already ZIP containers and
+high-entropy tensors compress poorly. Measure once; prefer resumability and one-pass hashing over speculative
+compression. Likewise, `rsync -a` preserving a symlink is transport behavior, not acceptance: an evidence
+contract that forbids symlinks must reject them before staging and after extraction.
 
 ## 6. Bulk per-dir download loop
 
@@ -270,4 +389,7 @@ race). → Fix: make every transfer self-sufficient — create the dest in the s
 **T6 — `Host key verification failed` after an instance is recreated.**
 Symptom: same `connect.<region>.<provider>.com` host, new host key, so SSH refuses. → Root cause: the
 recreated container presents a different host key on the reused hostname/port. → Fix:
-`ssh-keygen -R '[connect.<region>.<provider>.com]:<PORT>'`, then reconnect (re-accepts the new key).
+stop and retain the old key/receipt as evidence. Verify the recreation and new fingerprint through
+the provider console or another authenticated channel, then replace only the scoped host+port entry.
+When no authenticated fingerprint exists, use the §4A session TOFU receipt and disclose its weaker
+first-contact guarantee. Never delete the old key and blindly re-accept an unreviewed replacement.

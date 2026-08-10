@@ -16,7 +16,8 @@ local_nvme: true                # /root/autodl-tmp data disk is fast local NVMe,
 
 # Profile: AutoDL
 
-The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with a 3-tier storage model
+The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with a 3-tier storage substrate
+and one fixed project run layout
 and the *one* rental where the meter-stop action is non-destructive. Fills all 8 schema sections
 (`profiles/_schema.md`) at full depth. Read this **before Phase 0**; it owns every path, proxy, billing
 verb, and TB pin the SKILL.md phases delegate to. Universal gotchas are NOT restated here — see
@@ -34,7 +35,7 @@ To jump: `grep -in '<keyword>' profiles/autodl.md` (e.g. `grep -in inode profile
 ## Table of contents
 
 1. LAUNCH — entry points + env contract (base miniconda IS the env)
-2. STORAGE MODEL — 3 tiers + survival matrix + inode cap
+2. STORAGE MODEL — 3 tiers + fixed run layout + survival matrix + inode cap
 3. NETWORK — academic proxy + China mirrors + pinned TB
 4. SPOT / INTERRUPTION + RESUME — effectively on-demand
 5. TEARDOWN / BILLING — 关机 stops the meter AND keeps the disk (the AutoDL exception)
@@ -90,10 +91,23 @@ Three tiers, each with a different speed / size / inode profile and a **differen
 | `/root/autodl-tmp` data | **yes** | no | fast tier; checkpoints written here mid-run |
 | `/root/autodl-fs` shared | **yes** | **yes** | the ONLY tier that survives release; region-locked |
 
-**Where checkpoints MUST go for the §5 teardown verb:** write live checkpoints to the fast data disk
-(`/root/autodl-tmp/checkpoints/<name>`, never the 30 GB system disk), then **checked-sync `best.pth`
-to `/root/autodl-fs`** — the only tier that survives a 释放. If only ever using 关机, the data disk also
-survives, but syncing the durable copy to FS is the safe default (a later release loses the data disk).
+**Use this exact per-project binding.** AutoDL compute state stays below the fast data disk:
+
+```text
+/root/autodl-tmp/<project>/{cache,active,export/.partial,export/<run-id>,quarantine}
+```
+
+The `<project>` slug and `<run-id>` come from the run contract; they are placeholders, not permission to add
+another `artifacts/` level or an `inbox/`. The state semantics and atomic closeout gates are in
+`references/run-remote/artifact-layout.md`.
+
+**Where checkpoints go:** write live checkpoints to
+`/root/autodl-tmp/<project>/active/<run-id>/` on the fast data disk (never the 30 GB system disk).
+`latest.pth` may be the mutable resume anchor there. Retain the selection best plus that anchor, with
+`save_top_k <= 3` unless the user approved another policy. The data disk survives 关机 and remains
+source-of-truth while the run is open. A later 释放 still loses any open run, so close to
+`export/<run-id>` and verify/pull or hand that closed capsule to `mirror-research-artifacts` before release.
+Never sync `active/` as a whole to `/root/autodl-fs` or Hugging Face.
 
 **Region/DC-lock (AD3).** FS quota is region-scoped; each region has its own physical mount. Files written
 from a `<region-a>` instance are invisible to a `<region-b>` instance even at the identical
@@ -102,13 +116,21 @@ pick one region as primary and scp between them (slow). Confirm sharing with a w
 another probe before relying on it.
 
 **Inode discipline (AD4).** The ~200K cap is **independent of bytes**: `df -h` can read 34% while `cp`
-fails "No space left" because `df -i` is at 100%. The inode bomb is **per-sample eval visualization**
-(`files_per_sample × N_samples × N_conditions` → tens of thousands of tiny files); checkpoints (few large
-files) are inode-cheap. Monitor `df -i`, not just `df -h` (Phase 0 + every space check). Eval-artifact
-sizing policy is owned by **REQUIRED:** references/verifying/methodology.md.
+fails "No space left" because `df -i` is at 100%. Bound exported visualization before rendering:
+for each test, `min(100, N_test) × conditions × task-native roles`, with stable atomic files only under
+`test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`. This full coverage is required for
+every declared test and is not an optional preview set. Hardware output follows the same coverage rule but
+must close as a separate `export/hardware/<hardware-run-id>` capsule, never inside software
+`export/<run-id>`. Bind the fixed selection manifest's
+`_trust/selections/<selection-id>.json` path/hash in `run.json`; do not add a second selection manifest,
+legacy visualization index, default montage/contact sheet, or full test-render tree.
+Checkpoints are inode-cheap but still retention-bounded. Monitor `df -i`, not just `df -h` (Phase 0 +
+every space check). Eval-artifact sizing policy is owned by **REQUIRED:**
+references/verifying/methodology.md.
 
-**Data-disk hog (AD5).** When `/root/autodl-tmp` hits 100% but `runs/` looks small, the real hog is the
-**HF cache symlinked onto the data disk** (`~/.cache/huggingface` → tens of GB of model blobs). Audit
+**Data-disk hog (AD5).** When `/root/autodl-tmp` hits 100% but `active/` looks small, the real hog is the
+**HF cache symlinked onto the data disk** (`~/.cache/huggingface` → tens of GB of model blobs). Keep
+the cache at `/root/autodl-tmp/<project>/cache/` and audit
 `du -sh ~/.cache/huggingface/hub/models--* | sort -rh` before deleting checkpoints; redirect `HF_HOME` to
 the data disk explicitly (see §8). Disk is expandable — prefer expand over silently shrinking the
 experiment (principle #9). Get explicit user confirmation naming `rm -rf` targets (the harness classifier
@@ -151,7 +173,11 @@ project's existing hosted tracker and the bundled `scripts/wandb_forensics.py`).
 
 **SSH flavor.** Direct-TCP SSH on the per-instance host:port — `scp`/`rsync` work normally (no proxied-SSH
 restriction). Use a per-dir resumable loop for large transfers (single-connection `scp -r` resets mid-
-transfer); `rsync -avz --partial` is preferred. Transport patterns → `references/run-remote/ssh_transport.md`.
+transfer); `rsync -avz --partial` is preferred. On Windows with Clash/Mihomo, keep OpenSSH direct as
+the first path; only recorded banner-timeout/fake-IP/TUN evidence may enter the parameterized DoH +
+`IP_UNICAST_IF` single-socket fallback. Do not change system routes, DNS, proxy settings, or
+Clash/Mihomo configuration. Transport and host-key receipt contract →
+`references/run-remote/ssh_transport.md` §4A.
 
 ---
 
@@ -164,8 +190,9 @@ not always OOM — enumerate reboot / OOM / SSH-HUP / manual-kill before conclud
 `references/run-remote/gotchas_universal.md`); (c) availability — the GPU plan being sold out at create-time (build
 retry-until-available, not survive-an-eviction).
 
-**Resume hook.** The universal spine still applies (principle #8): checkpoint atomically to the data disk +
-sync `best.pth` to FS, and resume-from-latest unconditionally on relaunch. The detach primitive (§6) makes
+**Resume hook.** The universal spine still applies (principle #8): checkpoint atomically to
+`active/<run-id>/state/`, keep it bounded, and resume-from-latest unconditionally on relaunch. Promote to
+the FS only as a closed export. The detach primitive (§6) makes
 the *identical launch command* survive an SSH drop; checkpoint+resume makes it survive a reboot. Cadence
 formula → `references/run-remote/spot-resilience.md` (the formula generalizes even without spot — it bounds
 re-compute lost to a reboot).
@@ -190,14 +217,17 @@ forever, K8s wipes the pod FS, Colab loses `/content`) a "stop" is lossy or stil
 cheaper than running, but not free. Only 释放 fully ends storage billing, at the cost of the data disk.
 **⚠️ Auto-release clock (AD-DANGER, verified 2026-06):** a 关机 (stopped) instance is **auto-released after 15 days** (the
 console shows "关机 15 天后释放") → that release deletes `/` **and the data disk**, so 关机 is safe parking
-only *within* the window; for a longer pause, sync `best` to `/root/autodl-fs` (survives 释放) or expect to
-re-download. Low balance / arrears also force-stop the instance. **Surface this to the user up front
+only *within* the window; for a longer pause, first close canonical `export/<run-id>`, then pull-verify it or
+hand it to `mirror-research-artifacts` for a durable replica. Low balance / arrears also force-stop the
+instance. **Surface this to the user up front
 (principle #10)** — most users assume 关机 parks the box indefinitely.
 **Teardown Iron Law (SKILL.md Phase 5):** no 释放 / file-delete until `best.pth` is **pulled to local AND
 verified by load** (`scripts/verify_local.py`) AND the user explicitly approves — "it looked done in the
 log" is not evidence (principle #3). Because 关机 is non-destructive here, the cheap safe move when unsure
 is to **关机 and ask**, never 释放 on a guess. If a separate verification-before-completion skill is
-installed, invoke it; otherwise enforce the exact manifest + `PULL_VERIFIED.json` gate bundled here.
+installed, invoke it; otherwise stop before release. The generic `mirror-research-artifacts` workflow owns
+the external frozen manifest, live exact-roster validation, and `PULL_VERIFIED.json`; none belongs in
+canonical `run.json`.
 
 ---
 
@@ -254,12 +284,12 @@ probe.
 **AD4 — FS write fails "No space left" while `df -h` looks fine.** *Symptom:* `cp`/`mkdir` to
 `/root/autodl-fs` fails though `df -h` shows ~34%; `df -i` shows `… 0 100%`. *Root cause:* the shared FS
 enforces a **hard ~200K inode cap independent of bytes**; per-sample eval visualization (many tiny files)
-exhausts it. *Fix:* monitor `df -i`; cap per-sample eval vis on large test sets (sizing → verifying-dl-
-experiments); once a results dir is verified locally, prune its per-sample image subdir from FS; recover by
-`find /root/autodl-fs -depth -type d -name '<vis-dir>' -exec rm -rf {} +` to free inodes fast.
+exhausts it. *Fix:* monitor `df -i`; export a bounded, manifest-listed sample cohort as categorized atomic
+files, never a default montage or full render dump; keep mutable render work under `active/`, not the FS.
+Inventory exact cleanup candidates and obtain explicit deletion authorization—quarantine is not trash.
 
 **AD5 — data disk full; HF cache is the hidden hog; agent `rm` auto-denied.** *Symptom:*
-`/root/autodl-tmp` at 100% though `runs/` looks small; an agent `rm -rf` of "obvious junk" is auto-denied.
+`/root/autodl-tmp` at 100% though `active/` looks small; an agent `rm -rf` of "obvious junk" is auto-denied.
 *Root cause:* `~/.cache/huggingface` is symlinked onto the data disk, so the **HF model cache** (tens of
 GB) is the real hog; the harness blocks irreversible `rm -rf` whose targets the agent inferred. *Fix:*
 audit `du -sh ~/.cache/huggingface/hub/models--* | sort -rh`; set `HF_HOME` to a chosen data-disk dir + keep
@@ -302,16 +332,24 @@ before launch; disclose the off-band torch version with results.
 
 ## 8. SCRIPT OVERRIDES
 
-The exact values to parameterize the `scripts/` templates (`scripts/run_one.sh.template`,
-`scripts/run_queue.sh.template`) for AutoDL:
+The AutoDL mount binding. Set `<project>` and `<run-id>` from the run contract before parameterizing any
+wrapper; they are placeholders, not universal path literals:
 
 ```sh
-DATA_DIR=/root/autodl-tmp             # fast NVMe data disk — live checkpoints, logs, HF cache
-DURABLE_DIR=/root/autodl-fs           # region-locked shared FS — the only tier surviving 释放
+PROJECT_ID=<project>
+RUN_ID=<run-id>
+PROJECT_ROOT=/root/autodl-tmp/$PROJECT_ID
+CACHE_ROOT=$PROJECT_ROOT/cache
+ACTIVE_ROOT=$PROJECT_ROOT/active
+EXPORT_ROOT=$PROJECT_ROOT/export
+PARTIAL_ROOT=$EXPORT_ROOT/.partial
+QUARANTINE_ROOT=$PROJECT_ROOT/quarantine
+DATA_DIR=$ACTIVE_ROOT/$RUN_ID          # legacy wrapper base; creates only this run's mutable state
+DURABLE_DIR=                           # do not let run_one copy a partial checkpoint tree into exports
 PROXY_HOOK='source /etc/network_turbo 2>/dev/null || true'   # MANDATORY before any external call (AD1)
 CRED_FILE=/root/.wandb_key            # per-instance ONLY — the FS security classifier blocks wandb keys
-SCRATCH='latest.pth'                  # prune on success; keep best.pth (the keepable artifact)
-HF_HOME=/root/autodl-tmp/huggingface_cache   # redirect off the symlinked ~/.cache hog (AD5)
+SCRATCH='latest.pth'                  # mutable resume anchor; active only, never export it
+HF_HOME=$CACHE_ROOT/huggingface       # regenerable cache stays in the exact project layout (AD5)
 HF_ENDPOINT=https://hf-mirror.com     # + HF_HUB_DISABLE_XET=1 (AD2)
 DETACH=tmux                           # nohup fallback when tmux is absent (§6)
 PY=/root/miniconda3/bin/python        # base IS the env — explicit interpreter, never bare python3 (AD6)
@@ -323,8 +361,20 @@ put the key at the **per-instance** `/root/.wandb_key`, never on `/root/autodl-f
 credential block via stdin so the secret never appears in a command; the wrapper reads it
 into `WANDB_API_KEY` before launch. Secrets-via-stdin pattern → `references/run-remote/ssh_transport.md`.
 
-**Checked-sync (the gated success line).** `run_one.sh` writes live checkpoints to
-`$DATA_DIR/checkpoints/<name>`, prunes `latest.pth` on success, then syncs `best.pth` to
-`$DURABLE_DIR/final_ckpts/<name>` **gating the success echo on the actual copy result** — an unconditional
-"synced" lies when the FS inode cap (AD4) silently fails the `mkdir`/`cp` (universal silent-sync gotcha).
-Until a download is verified locally, the **data disk** copy is source-of-truth.
+**Closed-export handoff.** The bundled `run_one.sh` has a legacy `final_ckpts/` copy path; leave
+`DURABLE_DIR` empty while computing. After evaluation, assemble the canonical capsule under
+`$PARTIAL_ROOT/$RUN_ID`, require `run.json` + `best.pth`, allow only a frozen optional `last.pth`, exclude
+`latest.pth`, and require canonical `config.yaml`, `train.csv`, and
+`test/<test-id>/{metrics.json,results.parquet,vis/<condition-id>/<task-native-role>/<sample-id>.png}` paths.
+Reject any declared software test whose vis tree does not cover all declared conditions × task-native roles × K
+fixed samples. Validate, then atomically rename it to `$EXPORT_ROOT/$RUN_ID`. A failed candidate moves to
+`$QUARANTINE_ROOT`; it never overwrites an existing export. Do not add `COMPLETE.json` or `MANIFEST.json`.
+For any shared-FS, local, or Hugging Face replica, invoke `mirror-research-artifacts` on the closed export;
+its external frozen manifest carries the exact file roster/bytes/hashes—never duplicate that inventory in
+`run.json`. Never whole-sync `$ACTIVE_ROOT`. Until a verified export/pull exists, the active copy remains source-of-truth
+and 关机—not 释放—is the conservative park action.
+
+If the job emits real capture/hardware results, do not add them to `$EXPORT_ROOT/$RUN_ID`. Either hand their
+capture/decode/model-run bindings to `research-artifact-hygiene` or build, validate and atomically close the
+weight-free capsule at `$PARTIAL_ROOT/hardware/<hardware-run-id>` →
+`$EXPORT_ROOT/hardware/<hardware-run-id>`; its mandatory vis has full conditions × roles × K coverage.

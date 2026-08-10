@@ -42,6 +42,43 @@ Publish a run through staging→verification→atomic rename. The producer manif
 Never overwrite an accepted directory with a retry. Quarantine partial or rejected attempts under a
 unique failure path with logs and environment evidence.
 
+## Authorization continuity
+
+Keep three layers distinct:
+
+| Layer | What it answers | What it does not grant |
+|---|---|---|
+| execution permission | can this shell/process access the path, network or GPU? | task scope or scientific authority |
+| operational authority | may this bounded run, pull, retry or repair proceed? | permission to promote a metric or publish |
+| scientific promotion | may this evaluated result support a claim, table or figure? | deletion, release or unrelated execution |
+
+After a user authorizes one bounded, non-overwriting delivery objective, do not re-ask merely because a
+control-plane repair mints `verifier-v2`, `contract-v3`, a new immutable failure record, or another unique
+staging path. Continue when the source data, checkpoint bytes, scientific protocol, cost envelope and
+destructive-action boundary are unchanged. Re-ask only for materially new authority: new billable compute,
+delete/overwrite/irreversible process control, a changed seed/data/split/evaluator/protocol, metric promotion,
+publication, or a wider external side effect. A project unattended charter changes this rule only after its
+explicit activation condition is met and only for the actions it names.
+
+## Real-schema gate and verification cost
+
+The producer's versioned artifact is the positive schema source of truth. A synthetic fixture may exercise
+negative cases, but it must not invent a positive field, collapse a structured object to a boolean, or omit a
+real key and then make the verifier reject valid evidence. Freeze a redacted real-shape positive fixture with
+the exact key set and types; prove the regression is live by restoring the bad assumption, observing failure,
+then restoring the fix and observing pass.
+
+Split verification into two lanes:
+
+1. **Control plane (small and repeatable):** schema, canonical JSON, paths, identities, contract/script hashes,
+   state transitions and empty-directory semantics. Make this lane green before reading a large payload.
+2. **Data plane (large and bounded):** exact roster/bytes/SHA-256 plus fresh checkpoint safe-load. Recompute the
+   large payload once at each real trust boundary—producer, independent remote acceptance and local pull—not
+   once per wrapper, fixture or verifier revision.
+
+A SHA match proves byte identity, not parse or schema correctness. If a frozen verifier encoded the wrong
+schema, preserve it and mint a new immutable verifier/contract; never monkeypatch or bypass the gate in place.
+
 ## Independent acceptance
 
 On a node other than the producer:

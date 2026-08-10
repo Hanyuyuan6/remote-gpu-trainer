@@ -8,7 +8,7 @@ a fan-out of many), now wrapped in the full run → verify → deliver arc.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-SKILL.md-blue)](https://agentskills.io)
-[![evals](https://img.shields.io/badge/evals-18%2F18%20reachable-brightgreen)](evals/RESULTS.md)
+[![evals](https://img.shields.io/badge/evals-passing-brightgreen)](evals/RESULTS.md)
 [![Lifecycle](https://img.shields.io/badge/lifecycle-RUN%20%C2%B7%20VERIFY%20%C2%B7%20DELIVER-blueviolet)](#whats-inside)
 [![Platform profiles](https://img.shields.io/badge/platform%20profiles-8-orange)](#whats-inside)
 [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/Hanyuyuan6/remote-gpu-trainer/releases/tag/v1.0.0)
@@ -50,7 +50,7 @@ flowchart TD
     RUN --> RR["references/run-remote/ + profiles/×7<br/>a box you rent — billing, spot, teardown"]
     RUN --> TR["references/training/ ×8<br/>when the run breaks: OOM · hang · NaN · convergence"]
     VER --> VM["references/verifying/<br/>14-probe methodology · collapse · smoke"]
-    DEL --> DM["references/delivering/<br/>EVIDENCE.json · append-only runs · reconcile"]
+    DEL --> DM["references/delivering/<br/>sealed export capsules · custody manifests · reconcile"]
 ```
 
 ## Contents
@@ -126,8 +126,9 @@ remote-gpu-trainer/
 │   │                              #     multinode · gotchas_universal (U1–U44)
 │   ├── verifying/                 #   VERIFY: methodology (14 probes) · representation-collapse ·
 │   │                              #     smoke-hidden-failures
-│   ├── delivering/                #   DELIVER: principles · data-architecture (EVIDENCE.json) ·
-│   │                              #     evidence-manifest-schema · figures · delivery-gate
+│   ├── delivering/                #   DELIVER: principles · data-architecture (sealed exports) ·
+│   │                              #     evidence-manifest-schema · figures · delivery-gate ·
+│   │                              #     completeness-reconciliation
 │   ├── training/                  #   the DL-training debug layer (8 files; local/remote-agnostic):
 │   │                              #     OOM · NCCL-hang · NaN · throughput · ckpt · domain · convergence · data
 │   ├── companions.md              #   optional companion skills + the no-companion fallback
@@ -145,6 +146,7 @@ remote-gpu-trainer/
 │   ├── aggregate_to_fs.sh  download_loop.sh  setup-china-mirrors.sh
 │   ├── verify_local.py            #   load-and-verify each artifact before any teardown
 │   ├── reconcile.py  manifest_scaffold.py  repro.sh.template   # the DELIVER evidence tooling
+│   ├── build_pull_manifest.py  verify_artifact_bundle.py  compare_acceptance.py   # atomic artifact acceptance
 │   └── wandb_forensics.py  check_staleness.py
 ├── examples/autodl_sweep/         # one complete worked case, end to end
 └── evals/                         # cases.jsonl + run_evals.py (no-API-key drift guard) + RESULTS.md
@@ -207,7 +209,7 @@ uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer  
   statistical integrity, cross-document reconciliation, the academic-integrity spectrum) plus two deep
   playbooks.
 - **`references/delivering/`** is the *deliverable* layer: make every shipped number a deterministic
-  function of one immutable evidence layer (`EVIDENCE.json` single source of truth, append-only runs,
+  function of one immutable evidence layer (sealed `export/<run-id>` capsules as single source of truth, append-only runs,
   generated-not-transcribed tables, the figure-chain pixel gate, a disclosure gate), with `reconcile.py`
   to catch cross-document drift.
 - **`references/training/`** is the DL-training debug layer, eight files for when the *run* breaks rather
@@ -220,8 +222,9 @@ uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer  
   eight-section contract.
 - **`scripts/`** has the parameterized wrapper templates, monitors (memory, GPU health, VRAM-zombie
   reaper, read-only health patrol), transfer (FS aggregation, resumable download, China-mirror setup), the
-  load-and-verify checker, and the DELIVER tooling (`reconcile.py`, `manifest_scaffold.py`,
-  `repro.sh.template`, `wandb_forensics.py`).
+  load-and-verify checker, the DELIVER tooling (`reconcile.py`, `manifest_scaffold.py`,
+  `repro.sh.template`, `wandb_forensics.py`), and the atomic pull-acceptance chain
+  (`build_pull_manifest.py`, `verify_artifact_bundle.py`, `compare_acceptance.py`).
 - **`examples/autodl_sweep/`** is one complete worked case from start to finish.
 - **`evals/`** is a retrieval drift-guard. `cases.jsonl` holds realistic scenarios, `run_evals.py` checks
   with no API key that each scenario's answer is still at its documented location, and `RESULTS.md`
