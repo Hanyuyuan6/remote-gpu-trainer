@@ -136,6 +136,11 @@ reusable script.
 4. Refuse fallback for `auth_failed`, `host_key_mismatch`, `connection_refused`, a generic connect
    timeout, or `other_error`. Those are credential, identity, service-state or unknown failures;
    changing the Python SSH library would hide the cause rather than fix it.
+5. Once step 3 authorizes fallback, you **must not report** the host unreachable or a live refresh
+   blocked until a **bounded fallback attempt or host identity gate** finishes. A host-key mismatch is
+   `identity_gated` and remains fail-closed. If the bounded attempt fails for another reason, report only
+   `transport_unavailable`: **transport failure proves only transport unavailability**, never that a
+   remote run is completed, live, failed or stalled.
 
 The deterministic decision gate is **offline only**:
 
@@ -145,6 +150,11 @@ python scripts/plan_windows_ssh_transport.py --input <evidence.json> --output <p
 
 It parses already-captured evidence and emits a plan. It performs no DNS query, socket connection,
 SSH authentication, route edit, proxy edit or forward-test.
+
+For an authorized fallback the plan emits a machine-readable `reporting_gate` with
+`fallback_attempt_required=true`, `premature_transport_block_forbidden=true`, and
+`remote_state_inference_allowed=false`. The terminal transport verdict requires a
+`bounded fallback attempt or host identity gate`; generating the offline plan is not itself that attempt.
 
 The input carries explicit `connect_seconds` and `banner_seconds` bounds. The planner recomputes the
 canonical SHA-256 of the structured OpenSSH evidence and rejects a declared digest that does not match;

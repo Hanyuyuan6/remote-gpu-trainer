@@ -397,6 +397,12 @@ def build_plan(payload: dict[str, Any]) -> dict[str, Any]:
             "interface_index": interface_index,
             "reuse_contract": "single connected socket handed to Paramiko Transport",
         },
+        "reporting_gate": {
+            "fallback_attempt_required": True,
+            "premature_transport_block_forbidden": True,
+            "remote_state_inference_allowed": False,
+            "terminal_transport_verdict_requires": "bounded fallback attempt or host identity gate",
+        },
     }
 
 

@@ -169,6 +169,12 @@ def main() -> int:
         assert fallback["windows_socket"]["interface_index"] == 23
         assert fallback["host_key"]["mode"] == "session_tofu"
         assert fallback["system_mutations"] == []
+        assert fallback["reporting_gate"] == {
+            "fallback_attempt_required": True,
+            "premature_transport_block_forbidden": True,
+            "remote_state_inference_allowed": False,
+            "terminal_transport_verdict_requires": "bounded fallback attempt or host identity gate",
+        }
 
     for status in ("auth_failed", "host_key_mismatch", "connection_refused", "other_error"):
         expect_error(module, fallback_payload(status), "fallback_not_authorized")

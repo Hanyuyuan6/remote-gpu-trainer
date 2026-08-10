@@ -128,8 +128,11 @@ checking. A **Paramiko fallback** is allowed only after recorded `banner_timeout
 `tun_interference` evidence; it must use a DoH-selected address and Windows `IP_UNICAST_IF` on the
 single socket handed to the SSH transport. Never treat authentication failure, host-key mismatch,
 connection refusal, or an unexplained error as proxy evidence. Never mutate system routes, DNS,
-proxy settings, or Clash/Mihomo configuration. Full parameterized decision ladder and offline planner
-→ `references/run-remote/ssh_transport.md` §4A.
+proxy settings, or Clash/Mihomo configuration. Once fallback is authorized, you **must not report**
+the host unreachable or a live refresh blocked before a bounded Paramiko single-socket attempt completes
+or host identity fails closed. A **transport failure proves only transport unavailability**; it never
+proves that a remote run is completed, live, failed or stalled. Full parameterized decision ladder and
+offline planner → `references/run-remote/ssh_transport.md` §4A.
 
 | You're on… | Profile | Meter-stop verb (the trap) |
 |---|---|---|
