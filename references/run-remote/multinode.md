@@ -1,30 +1,16 @@
 # Multi-node NCCL & elastic-training gotchas — ADVANCED
 
-**Single-box users skip this entire file.** None of it applies to a single instance — one node, however many GPUs,
-runs DDP/FSDP over NVLink/PCIe and never touches the inter-node NCCL transport, fabric-manager, or rendezvous logic
-below. This file is **only** for jobs spanning ≥2 rented instances (multi-node DDP, FSDP, pipeline/tensor parallel,
-or elastic training). It assumes the checkpoint-to-durable + idempotent-resume spine is already in place
-(`references/run-remote/principles.md` #8; cadence + atomic-write in `references/run-remote/spot-resilience.md`) — multi-node only changes
-*how the process group forms and breaks*, never the resume mechanism.
+**Single-box users skip this entire file** — one node, however many GPUs, runs DDP/FSDP over NVLink/PCIe and never
+touches the inter-node NCCL transport, fabric-manager, or rendezvous logic below; these **[P]
+platform/topology-specific** gotchas are only for jobs spanning ≥2 rented instances (multi-node DDP, FSDP,
+pipeline/tensor parallel, or elastic training) and assume the checkpoint-to-durable + idempotent-resume spine
+(`references/run-remote/principles.md` #8, cadence and atomic-write in
+`references/run-remote/spot-resilience.md`) is already in place, because multi-node changes only *how the process
+group forms and breaks*, never the resume mechanism.
 
-These are all **[P] platform/topology-specific** gotchas. The universal ones (disk, OOM, CRLF, silent sync, spot
-grace) are **not** restated here — see `references/run-remote/gotchas_universal.md`.
+## Multi-node gotchas
 
-## Table of contents
-
-- **Fabric-manager** — one bad node hangs the WHOLE job at NCCL init (MN1)
-- **NIC selection** — NCCL picks docker0/loopback/slow NIC (MN2)
-- **Timeout masking** — default 1800 s hides a straggler/dead rank (MN3)
-- **MTU mismatch** — jumbo frames silently dropped, small messages fine (MN4)
-- **Elastic restart ≠ state restore** — torchrun `--max-restarts` (MN5)
-- **Elastic Horovod pause-below-min-np** — pauses then errors (MN6)
-- **First-move checklist** — bring up a healthy multi-node group
-
-To jump: `grep -in <keyword> references/run-remote/multinode.md` (e.g. `grep -in fabric references/run-remote/multinode.md`).
-
----
-
-## MN1 — Fabric-manager down on one node hangs the entire job at NCCL init
+### MN1 — Fabric-manager down on one node hangs the entire job at NCCL init
 
 **Symptom.** Launch a multi-node job; every rank prints up to NCCL init then freezes — no traceback, no progress,
 no OOM, just a silent hang at the first collective. Killing and relaunching reproduces the exact same stall. A
@@ -48,9 +34,7 @@ the cause is local to one box.
 
 URL: https://support.crusoecloud.com/hc/en-us/articles/46061806112155-NCCL-Hangs-and-Multi-Node-Training-Stalls-Caused-by-Failed-nvidia-fabricmanager
 
----
-
-## MN2 — NCCL picks the wrong NIC (docker0 / loopback / a slow interface)
+### MN2 — NCCL picks the wrong NIC (docker0 / loopback / a slow interface)
 
 **Symptom.** Multi-node init hangs forever, OR it connects but inter-node bandwidth is 10× too slow (allreduce
 dominates the step time; single-node throughput was fine). `NCCL_DEBUG=INFO` shows NCCL binding to `docker0`, `lo`,
@@ -71,9 +55,7 @@ job either never connects (unroutable) or runs over the wrong, slow path.
 
 URL: https://github.com/NVIDIA/nccl/issues/1580
 
----
-
-## MN3 — Default 1800 s NCCL timeout masks a straggler or a dead rank
+### MN3 — Default 1800 s NCCL timeout masks a straggler or a dead rank
 
 **Symptom.** A run that was progressing freezes at a collective for exactly **30 minutes**, then dies with a
 `Watchdog ... collective ... timed out` / `NCCL timeout` error — or worse, hangs far longer because the watchdog is
@@ -95,9 +77,7 @@ the cause, and a transient straggler can trip a hard abort it should have surviv
 
 URL: https://repost.aws/questions/QURXddiuikQLesRDGz39RhIw/nccl-socket-timeout-when-using-large-dataset-in-multi-node-pretraining
 
----
-
-## MN4 — Jumbo-frame MTU mismatch silently drops large NCCL frames
+### MN4 — Jumbo-frame MTU mismatch silently drops large NCCL frames
 
 **Symptom.** Small collectives work (rendezvous succeeds, tiny tensors allreduce fine), but the job hangs or throws a
 transport error the moment a **large** payload is sent — large gradient buckets, the first big allreduce, or a model
@@ -119,9 +99,7 @@ lands. Classic on containerized rentals where the container MTU and the host bri
 
 URL: https://github.com/moby/moby/issues/4378
 
----
-
-## MN5 — torchrun / TorchElastic `--max-restarts` restarts the process group but does NOT restore training state
+### MN5 — torchrun / TorchElastic `--max-restarts` restarts the process group but does NOT restore training state
 
 **Symptom.** A worker dies (preemption, transient fault); torchrun's `--max-restarts=N` dutifully re-runs rendezvous
 and relaunches **all** workers — but training resumes from **step 0** (or the wrong epoch), silently throwing away the
@@ -145,9 +123,7 @@ load-latest-checkpoint just re-runs `main()` from scratch on every restart.
 
 URL: https://docs.pytorch.org/tutorials/beginner/ddp_series_fault_tolerance.html
 
----
-
-## MN6 — Elastic Horovod pauses below `--min-np`, then errors at `HOROVOD_ELASTIC_TIMEOUT`
+### MN6 — Elastic Horovod pauses below `--min-np`, then errors at `HOROVOD_ELASTIC_TIMEOUT`
 
 **Symptom.** Under elastic Horovod (`horovodrun -np 8 --min-np 4 --max-np 12`), enough workers get preempted to drop
 the live count below `--min-np`; the job does **not** fail immediately — it appears to hang (paused, no progress) —
@@ -169,8 +145,6 @@ capacity to return. It only errors once `HOROVOD_ELASTIC_TIMEOUT` (default **600
 
 URL: https://horovod.readthedocs.io/en/stable/elastic_include.html
 
----
-
 ## First-move checklist — bring up a healthy multi-node group
 
 Run this order **before** trusting any multi-node throughput number; it isolates MN1–MN4 cheaply (no full job needed):
@@ -187,4 +161,5 @@ Run this order **before** trusting any multi-node throughput number; it isolates
   `references/run-remote/spot-resilience.md`.
 
 For fanning a *sweep* across nodes (independent cells, not one job over many nodes), that is
-`references/run-remote/parallel_ablation.md` + **REQUIRED** `superpowers:dispatching-parallel-agents`, not this file.
+`references/run-remote/parallel_ablation.md` — with `superpowers:dispatching-parallel-agents` if it is installed,
+otherwise the independence and reconciliation gates specified in that file — not this file.

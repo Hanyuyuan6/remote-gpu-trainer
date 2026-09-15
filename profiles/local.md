@@ -30,14 +30,9 @@ discipline: the same env hygiene, the same resource awareness, the same artifact
 Read this whole file before the first local run, then jump to the matching `references/run-local/` doc for the
 mechanics. **Universal gotchas are NOT restated here** — see `references/run-remote/gotchas_universal.md`.
 
-**Table of contents** (`grep -in '<keyword>' profiles/local.md` to jump):
-- 8-section schema for a machine you own (sections 1–8), with the rental-only sections marked **n/a**
-
 The one load-bearing idea: **the env/resource/artifact discipline is identical to a rental; only the
-billing-and-teardown machinery is absent.** Don't let "it's my own box" erode the env hygiene or the seed
-hygiene — those failures cost the same whether or not a meter is running.
-
----
+billing-and-teardown machinery is absent** — "it's my own box" must not erode env or seed hygiene, because
+those failures cost the same whether or not a meter is running.
 
 ## 1. LAUNCH
 
@@ -67,10 +62,9 @@ survival matrix is therefore trivial — everything "survives" until *you* delet
 caution is real: *measure, never assume* your free space and inodes with `df -h && df -i <mount>` on your own
 filesystem (ext4/xfs/ntfs/apfs caps differ; do not assume any rental constant).
 
-| Tier | Path | Survives a reboot? | Survives until... | Cap |
-|---|---|---|---|---|
-| Local disk(s) you own | `/`, `~`, any mounted drive | **yes** | you delete it / the drive fails | host-dependent — `df -h`/`df -i` |
-| External / NAS (if you use one) | mount point | yes | the drive/share is detached | host-dependent |
+Every tier is the same row: your local disks (`/`, `~`, any mounted drive) survive a reboot and live until
+you delete them or the drive fails; an external/NAS mount lives until it is detached. Caps are
+host-dependent.
 
 The local subtlety: there is **no "pull results to local before teardown" step** — the results are *already*
 local; that whole rental ritual disappears. What remains is ordinary disk hygiene: a training run fills inodes
@@ -108,7 +102,7 @@ cost trap, no "forgotten box bills 24/7." The only standing cost of leaving a ru
 your machine's wear — real, but not a billing meter you must race.
 
 What replaces the teardown ritual is mundane cleanup on **your** terms: when a run is done, free the GPU (kill
-leftover `python` so a zombie doesn't pin VRAM for the next run → `references/run-local/local-oom.md` O3) and
+leftover `python` so a zombie doesn't pin VRAM for the next run → `references/run-local/local-oom.md` LO3) and
 prune scratch checkpoints. There is no Iron Law "verify-before-teardown" here because **nothing is being torn
 down** — the artifacts are already on your disk. (If you ever rent a box to offload a job, that *run* follows
 the matching rental profile's teardown law, not this one.)
@@ -138,37 +132,25 @@ the matching rental profile's teardown law, not this one.)
   Root cause: a dev laptop/desktop is sized for *editing code*, not *executing DL compute*; a model needing a
   40–80 GB card cannot forward on an 8–16 GB consumer GPU. → Fix: **heavy DL constructs/forwards/sampling go on
   the GPU; the local dev box does static checks only** (lint, type-check, a toy 2-layer CPU smoke). Full rule +
-  the split table → `references/run-local/local-oom.md` O4.
+  the split table → `references/run-local/local-oom.md` LO4.
 - **LOC3 — A run that fit yesterday OOMs today (the desktop ate the headroom).** Symptom: same config, now
   VRAM- or host-RAM-OOMs. → Root cause: no isolation — a leftover zombie `python` pins VRAM, or the
   browser/IDE/desktop GUI now hold the system RAM the run needs. → Fix: reclaim first (`nvidia-smi` / `fuser -v
   /dev/nvidia*` to find a VRAM holder; `free -h` and close apps for host-RAM) before blaming the model →
-  `references/run-local/local-oom.md` O1/O3.
-- **LOC4 — A reboot / laptop shutdown silently orphans the run (`tmux` doesn't survive it).** Symptom: a
-  detached job is gone after an OS update reboot or a laptop shutdown; idle GPU, no session. → Root cause:
-  `tmux`/`nohup` survive an SSH drop and a *sleep* but **not** a host reboot — every session dies. → Fix: make
-  resume idempotent (§4) so the *same* launch command continues from the last checkpoint; a laptop that sleeps
-  is fine (tmux survives sleep), a shutdown/reboot needs the relaunch.
-- **LOC5 — A second run silently halves throughput by oversubscribing the GPU.** Symptom: two runs on the
-  "same idle card" both crawl, or the second OOMs on a card that looked free. → Root cause: no scheduler —
-  nothing prevents two processes sharing one GPU; they contend for VRAM and SM time. → Fix: you *are* the
-  scheduler — serialize, or pin each run to a distinct card with `CUDA_VISIBLE_DEVICES`; check `nvidia-smi` for
-  a holder before launching (zombie holders → U11).
-- **LOC6 — CRLF breaks `.sh` if you author on Windows.** Symptom: `bash: $'\r': command not found` running a
-  script you edited in a Windows editor (relevant since this profile is "your own box," often Windows). → Root
-  cause: Windows editors write CRLF line endings. → Fix: `.gitattributes` with `*.sh text eol=lf`; unblock an
-  affected file with `sed -i 's/\r$//' run.sh`.
+  `references/run-local/local-oom.md` LO1/LO3.
+- **LOC4 — A reboot / laptop shutdown silently orphans the run (`tmux` doesn't survive it).** → GEN6 in
+  `profiles/generic-ssh.md` §7. Local-only nuance: a laptop that *sleeps* is fine (tmux survives sleep); a
+  shutdown/reboot needs the relaunch, which idempotent resume (§4) makes free.
+- **LOC5 — A second run silently halves throughput by oversubscribing the GPU.** → GEN7 in
+  `profiles/generic-ssh.md` §7.
+- **LOC6 — CRLF breaks `.sh` if you author on Windows** (likelier here, since your own box is often
+  Windows). → U26 in `references/run-remote/gotchas_universal.md`.
 
 ### Local debugging (your own box — no console needed, you're on it)
 
-- **Is the run alive or orphaned?** `tmux ls; pgrep -af <train-script> | head` — empty after a vanished log ⇒
-  reboot/shutdown killed the session (LOC4).
-- **Why did it die?** `dmesg 2>/dev/null | grep -iE 'killed process|out of memory|Xid' | tail; uptime` — OOM
-  line ⇒ host-RAM kill (`references/run-local/local-oom.md` O1); clean dmesg + low uptime ⇒ a reboot (LOC4).
-- **GPU health + who holds it:** `nvidia-smi`; a holder it can't attribute ⇒ `fuser -v /dev/nvidia*` (zombie,
-  U11). Read SM clock/power over raw `GPU-Util` (a liar, U21).
-- **Disk before it bites:** `df -h <mount>; df -i <mount>` — inodes hit 100% before bytes (U7); the byte-hog
-  often hides in `~/.cache/huggingface`.
+Same triage as `profiles/generic-ssh.md` §7 debugging, minus the `ssh` wrapper. Local substitutions: an
+empty `tmux ls` after a vanished log ⇒ LOC4; an OOM line in `dmesg` ⇒ host-RAM kill
+(`references/run-local/local-oom.md` LO1) rather than a rental cgroup cap.
 
 ## 8. SCRIPT OVERRIDES
 

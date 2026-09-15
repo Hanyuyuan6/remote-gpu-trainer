@@ -12,9 +12,9 @@ the reference docs and scripts instruct an agent to invoke.
 The verification layer (references/verifying/ and scripts/wandb_forensics.py)
 incorporates content merged in from the author's previously separate
 `verifying-dl-experiments` skill, which was authored by the same copyright
-holder and released under the MIT License. That content has been absorbed into
-this skill and is redistributed here under this skill's MIT License (see
-LICENSE). No third-party copyright attaches to the merge itself.
+holder and released under the MIT License. That content is redistributed here
+under this skill's MIT License (see LICENSE). No third-party copyright attaches
+to the merge itself.
 
     verifying-dl-experiments — Copyright (c) 2026 Yuyuan Han — MIT License
 
@@ -48,9 +48,8 @@ endorsed by any of them.
 3. OPTIONAL COMPANION SKILLS (separate installs)
 ------------------------------------------------
 
-The companion skills listed in references/companions.md (nature-figure,
-nature-data, the experiment-verifier agent, auto-research-pipeline,
-superpowers:dispatching-parallel-agents, huggingface-skills:hf-cli,
-huggingface-skills:huggingface-trackio) are NOT bundled or redistributed with
-this skill. Each is installed separately and governed by its own license. This
-skill is fully functional without any of them.
+The companion skills named in SKILL.md and README.md ("Companion skills") —
+research-artifact-hygiene, mirror-research-artifacts, the superpowers:* and
+huggingface-skills:* skills — are NOT bundled or redistributed with this skill.
+Each is installed separately and governed by its own license. This skill is
+fully functional without any of them.

@@ -1,29 +1,15 @@
-> Applies to both local and remote runs.
-
 # Data-pipeline correctness — the silent mistrainers in the DataLoader, not the model
 
-`throughput-profiling.md` owns making the dataloader **fast**; this file owns making it **correct** — the
-bugs that raise no error and let training "succeed" on the wrong data: augmentations that secretly never
-vary, streams that duplicate across workers/GPUs, collate that crashes or mis-pads, and preprocessing that
-silently shifts the input distribution. Each entry is **Symptom → Root cause → Fix** with the exact knob.
-
-Boundary: **references/verifying/methodology.md** owns the *judgement* "is this leakage / is the metric valid"; this
-file owns the *mechanism* (what the DataLoader / Dataset / transform actually did). When a data bug makes
-training "run but not learn," cross-check `convergence-debugging.md` — **O1 (overfit one batch)** isolates a
-broken loop from broken data.
-
-To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `worker`, `worker_init_fn`,
-`numpy`, `seed`, `iterabledataset`, `get_worker_info`, `collate`, `pin_memory`, `spawn`, `lambda`, `__len__`,
-`drop_last`, `cache`, `bgr`, `totensor`, `normalize`, `set_epoch`, `shuffle`).
+`references/training/throughput-profiling.md` owns making the dataloader **fast**, this file owns making it
+**correct** (the mechanism: what the DataLoader / Dataset / transform actually did), and
+**references/verifying/methodology.md** owns the judgement "is this leakage / is the metric valid".
 
 ## Table of contents
 
 - **DataLoader worker RNG (the augmentation-duplication bug)** — DP1 numpy-RNG-duplicated-across-workers · DP2 IterableDataset-duplicated-workers+ranks · DP3 uneven-shard-DDP-hang
-- **Dataset / collate / DataLoader contract** — DP4 ragged-collate · DP5 pin_memory-custom-type · DP6 spawn-breaks-lambdas · DP7 wrong-__len__ · DP8 size-1-batch-kills-BN · DP9 in-RAM-cache-OOM · DP15 /dev/shm-Bus-error
-- **Input preprocessing / labels / shuffle** — DP10 norm-stats-space/split+RGB/BGR · DP11 cv2-BGR · DP12 ToTensor-no-÷255 · DP13 Normalize-before-ToTensor · DP14 shuffle/sampler + set_epoch
+- **Dataset / collate / DataLoader contract** — DP4 ragged-collate · DP5 pin_memory-custom-type · DP6 spawn-breaks-lambdas · DP7 wrong-__len__ · DP8 size-1-batch-kills-BN · DP9 in-RAM-cache-OOM
+- **Input preprocessing / labels / shuffle** — DP10 norm-stats-space/split+RGB/BGR · DP11 cv2-BGR · DP12 ToTensor-no-÷255 · DP13 Normalize-before-ToTensor · DP14 shuffle/sampler + set_epoch · DP15 /dev/shm-Bus-error
 - **Pointers** — throughput-profiling.md, convergence-debugging.md, distributed-launch.md, references/verifying/methodology.md (skill)
-
----
 
 ## DataLoader worker RNG — the augmentation-duplication bug
 
@@ -40,9 +26,7 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 ### DP3 — Uneven `IterableDataset` shard length under DDP → NCCL hang / silent sample drop
 **Symptom**: after correctly sharding an `IterableDataset` by rank, training intermittently **hangs at the last batch** of an epoch (NCCL collective timeout), or some ranks run one extra step.
 **Root cause**: streaming shards rarely divide evenly by `world_size*num_workers`; when one rank's iterator exhausts while others still yield, the finished rank skips its `backward`/all-reduce and the rest block forever waiting on the absent collective. Unlike map-style `DistributedSampler` (which pads to a uniform length), `IterableDataset` sharding gives no automatic length equalization.
-**Fix**: make every rank run the **same** number of steps — (a) compute a global min steps/epoch and stop all ranks there (drop the ragged tail), (b) pad short shards by cycling samples, or (c) wrap with `model.join()` (the DDP `join` context manager) which shadows collectives for ranks that finish early. Set `drop_last=True` to discard the uneven final micro-batch within a worker. (Map-style `set_epoch` hang is a *different* cause → D22.) ([PyTorch data](https://docs.pytorch.org/docs/stable/data.html), [HF datasets#5360](https://github.com/huggingface/datasets/issues/5360))
-
----
+**Fix**: make every rank run the **same** number of steps — (a) compute a global min steps/epoch and stop all ranks there (drop the ragged tail), (b) pad short shards by cycling samples, or (c) wrap the loop in the DDP **Join** context manager, which mirrors the collectives of ranks that finish early → `references/training/distributed-launch.md` D9. Set `drop_last=True` to discard the uneven final micro-batch within a worker. (Map-style `set_epoch` hang is a *different* cause → D22.) ([PyTorch data](https://docs.pytorch.org/docs/stable/data.html), [HF datasets#5360](https://github.com/huggingface/datasets/issues/5360))
 
 ## Dataset / collate / DataLoader contract
 
@@ -69,14 +53,12 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 ### DP8 — A size-1 final batch crashes BatchNorm → `drop_last=True` on the train loader
 **Symptom**: training runs most of an epoch then dies at the **last** batch with `ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, C, ...])`. Happens when `len(dataset) % batch_size == 1`.
 **Root cause**: `nn.BatchNorm*` in training mode computes per-channel mean/var over the batch; with a single sample and trivial spatial size the per-channel count is 1, so variance is undefined and `F.batch_norm` raises (an intentional guard since 0.3). The default `DataLoader(drop_last=False)` keeps that ragged final batch.
-**Fix**: `DataLoader(..., drop_last=True)` on the **train** loader discards the incomplete final batch (the standard fix). Alternatives if you can't drop data: swap BatchNorm → `nn.GroupNorm`/`nn.LayerNorm` (no batch-stat dependence), or freeze BN to eval (O18). Keep `drop_last=False` on the **eval** loader (you want every sample) and rely on `model.eval()` there. (Tiny-batch BN *quality* → V7; per-rank batch-count equalization → D9; this is the single-process size-1 crash.) ([pytorch#4534](https://github.com/pytorch/pytorch/issues/4534))
+**Fix**: `DataLoader(..., drop_last=True)` on the **train** loader discards the incomplete final batch (the standard fix). Alternatives if you can't drop data: swap BatchNorm → `nn.GroupNorm`/`nn.LayerNorm` (no batch-stat dependence), or freeze BN to eval (O18). Keep `drop_last=False` on the **eval** loader (you want every sample) and rely on `model.eval()` there — but note that under DDP `DistributedSampler` **pads** the eval set so every rank gets an equal count, so the padded duplicates are scored twice: gather predictions with their sample index and de-duplicate, or evaluate on rank 0 alone. (Tiny-batch BN *quality* → V7; per-rank batch-count equalization → D9; this is the single-process size-1 crash.) ([pytorch#4534](https://github.com/pytorch/pytorch/issues/4534))
 
 ### DP9 — An in-RAM `Dataset` cache grows into host-OOM (and under `fork` workers never even shares)
 **Symptom**: RAM climbs steadily across iters/epochs until a bare `Killed` (exit 137, no traceback) — typically from a Dataset that lazy-caches decoded samples (`if idx not in self.cache: self.cache[idx]=load(idx)`). With `num_workers>0` the growth is **per-worker** and the cache gives no speedup.
 **Root cause**: two compounding effects — (1) the cache is unbounded: every index ever requested stays resident, so an epoch caches the whole decoded dataset; (2) under Linux `fork`, each worker is copy-on-write, so writing `self.cache[idx]=...` copies the touched Python objects' pages into that worker's **private** memory — invisible to siblings, so the cache both replicates (RAM × ~`num_workers`) AND is useless for cross-worker reuse.
 **Fix**: don't accumulate unbounded Python objects in `__getitem__`. Options: (a) precompute to a single `np.memmap` / Arrow / LMDB / `.npy` in `__init__` and read slices (the OS page cache **is** shared across forked workers); (b) bound the cache (`functools.lru_cache(maxsize=...)` or a ring buffer); (c) store it in shared memory (`Tensor.share_memory_()`). Prefer numpy/Arrow buffers over `list`/`dict` to avoid copy-on-write page churn. (Static `num_workers × big tensor` startup multiplier → U9; this is the *grows-during-training* cousin.) ([pytorch#13246 — worker memory replication](https://github.com/pytorch/pytorch/issues/13246), [PyTorch data — multi-process memory caveat](https://docs.pytorch.org/docs/stable/data.html))
-
----
 
 ## Input preprocessing / labels / shuffle
 
@@ -107,10 +89,8 @@ To jump: `grep -in '<keyword>' references/training/data-pipeline.md` (e.g. `work
 
 ### DP15 — `Bus error` / DataLoader worker killed → `/dev/shm` exhausted (the rental-container classic)
 **Symptom**: `DataLoader worker (pid N) is killed by signal: Bus error`, or `RuntimeError: unable to write to file </torch_...>` / `received 0 items of ancdata` — on a **rented container** while the identical code runs fine on your workstation. Usually with `num_workers>0`, often mid-epoch.
-**Root cause**: PyTorch passes worker tensors through **shared memory** (`/dev/shm`). Docker defaults `/dev/shm` to **64 MB** and many rentals inherit that, so a few workers moving normal batches overrun it and the kernel SIGBUS-kills a worker. This is *shared-memory* exhaustion — NOT host-RAM OOM (a bare `Killed` / exit-137 → `gotchas_universal.md` U9) and NOT a deadlock.
+**Root cause**: PyTorch passes worker tensors through **shared memory** (`/dev/shm`). Docker defaults `/dev/shm` to **64 MB** and many rentals inherit that, so a few workers moving normal batches overrun it and the kernel SIGBUS-kills a worker. This is *shared-memory* exhaustion — NOT host-RAM OOM (a bare `Killed` / exit-137 → `references/run-remote/gotchas_universal.md` U9) and NOT a deadlock.
 **Fix**: enlarge it at launch — `docker run --shm-size=8g` (or `--ipc=host`); where you can't set that (a fixed rental), switch the IPC strategy `torch.multiprocessing.set_sharing_strategy("file_system")` (fd-passing, slower but uncapped) and/or lower `num_workers`. Tell-tale: `df -h /dev/shm` shows a tiny cap — check it before launch. ([PyTorch multiprocessing shm note](https://docs.pytorch.org/docs/stable/notes/multiprocessing.html), [pytorch#5040](https://github.com/pytorch/pytorch/issues/5040))
-
----
 
 ## Pointers — adjacent mechanics catalogued elsewhere
 

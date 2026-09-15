@@ -1,23 +1,9 @@
-> Applies to both local and remote runs.
-
 # Convergence & optimization debugging — it runs, doesn't crash, but won't learn (or learns badly)
 
-The other training layers cover the run that **crashes** (`oom-memory.md`), **NaNs**
-(`precision-stability.md`), **hangs** (`distributed-launch.md`), or is **slow** (`throughput-profiling.md`).
-This file owns the quieter, far more common failure: the job runs cleanly to the end but the **loss is
-flat, falls too slowly, or the model underfits** — and the bug is in the optimization wiring, not the
-hardware. Each entry is **Symptom → Root cause → Fix** with the exact knob. **Always start with O1
-(overfit one batch)** — it separates "the loop is broken" from "the model/data is weak" in five minutes
-and tells you which half of this file you need.
-
-Boundary: **references/verifying/methodology.md** (**REQUIRED** at every "is the result real" fork) owns collapse,
-leakage, metric validity, train-vs-val generalization, and seed interpretation; this file owns the
-*mechanism* of why a correct-looking loop doesn't converge. NaN / loss-spike / LR-too-**HIGH** live next
-door in `precision-stability.md` (P8–P18) — this file is the LR-too-**LOW** / won't-move / mis-wired side.
-
-To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.g. `overfit`, `requires_grad`,
-`no_grad`, `optimizer`, `weight decay`, `adamw`, `lr finder`, `scheduler`, `accum`, `cross entropy`,
-`bcewithlogits`, `nllloss`, `freeze`, `batchnorm`, `discriminative`, `lora`, `update ratio`, `dead relu`).
+This file owns the job that runs cleanly but whose **loss is flat, falls too slowly, or underfits** because
+of the optimization wiring — **always start with O1 (overfit one batch)**; NaN / loss-spike /
+LR-too-**HIGH** is `references/training/precision-stability.md` P8–P18, and *is the converged number real*
+is `references/verifying/methodology.md`.
 
 ## Table of contents
 
@@ -27,8 +13,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 - **Fine-tuning / transfer** — O17 frozen-but-still-in-optimizer · O18 frozen-BN-running-stats · O19 discriminative-LR/forgetting · O20 strict=False-shape-mismatch · O21 LoRA/PEFT-wiring
 - **Training-dynamics dashboard (instrument it)** — O22 update:weight-ratio · O23 actual-LR · O24 GradScaler-scale · O25 dead-ReLU-fraction · O26 weight/grad/act-histograms
 - **Pointers** — precision-stability.md, distributed-launch.md, references/verifying/methodology.md (skill)
-
----
 
 ## It isn't learning at all — the first-hour triage
 
@@ -56,8 +40,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 **Symptom**: two faces — (1) trained under `eval()`: BN uses frozen running stats and never updates them, Dropout is off → underfits / loss barely moves; (2) evaluated under `train()`: BN uses noisy per-batch stats and Dropout fires → val loss flickers run-to-run and looks worse than train.
 **Root cause**: `train()`/`eval()` set a per-module flag that *"has an effect only on certain modules ... e.g. Dropout, BatchNorm"* (`eval()` == `train(False)`). In eval mode BN switches to stored `running_mean/var` and **stops** updating them; Dropout becomes identity. A fresh `nn.Module` defaults to `train()`, but any prior `.eval()` (a reused object, an inference helper, a val loop that didn't switch back) persists.
 **Fix**: bracket phases explicitly — `model.train()` atop each train epoch; `model.eval()` + `with torch.no_grad():` for every val/test pass; `model.train()` again before resuming. After build/load, `assert model.training` before the train loop. (Frozen-backbone BN is a *different* axis → O18; tiny-batch BN → by-domain V7.) ([nn.Module.train/eval](https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html))
-
----
 
 ## Optimizer / learning-rate / weight-decay / schedule
 
@@ -91,8 +73,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 **Root cause**: (1) fused AdamW does unscale + step + the inf/NaN check inside one CUDA kernel via `found_inf`; version-specific bugs (pytorch#140514, Lightning#21435) come from that plumbing / FSDP interaction — fused is still the experimental path. (2) `foreach` (the CUDA default when unset) horizontally fuses by allocating intermediates across **all** params at once, raising peak memory at the step vs the for-loop path.
 **Fix**: on a fused error/suspicious step under AMP/FSDP/bf16-mixed, fall back to `fused=False` (lets `foreach` default) or upgrade past the fixed issue — confirm a parity loss-curve before trusting fused for a real datapoint. If the **step** OOMs, set `foreach=False` for the low-peak for-loop path (slower, less memory; see oom-memory). Pick deliberately: fused fastest-when-correct, foreach faster than for-loop but higher peak. ([pytorch#140514](https://github.com/pytorch/pytorch/issues/140514), [Lightning#21435](https://github.com/Lightning-AI/pytorch-lightning/issues/21435), [AdamW doc](https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW.html))
 
----
-
 ## Loss-function footguns
 
 ### O12 — `softmax`/`log_softmax` before `nn.CrossEntropyLoss` → double-softmax → diluted gradient, slow/no learning
@@ -119,8 +99,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 **Symptom**: a model uses `nn.NLLLoss` but has no `LogSoftmax`/`F.log_softmax` before it (or a plain `Softmax`): training "runs" with no error but loss is nonsensical / won't converge, accuracy stuck near chance.
 **Root cause**: `nn.NLLLoss` computes **no** softmax — *"the input ... is expected to contain log-probabilities."* It simply gathers `-input[target]`. Raw logits → it negates an arbitrary-scale value; softmax **probabilities** (not log) → it negates a value in `[0,1]` giving a tiny, ill-scaled loss. Either way it isn't cross-entropy and the gradient is wrong, but the shapes are valid so PyTorch can't catch it.
 **Fix**: put `F.log_softmax(logits, dim=1)` (or an `nn.LogSoftmax(dim=1)` final layer) immediately before `nn.NLLLoss` (class dim = 1 for `(N,C)`). Simpler and less error-prone: drop NLLLoss+LogSoftmax and use `nn.CrossEntropyLoss` on raw logits (O12), which fuses both. Never pair NLLLoss with a plain (non-log) Softmax. ([NLLLoss doc](https://docs.pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html))
-
----
 
 ## Fine-tuning / transfer
 
@@ -149,8 +127,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 **Root cause**: (a) LoRA only wraps modules whose names match `target_modules`, and names are architecture-specific (`q_proj/v_proj` for Llama vs `query/value` for BERT vs `convolution` for resnet) — a wrong/absent name injects no adapter, PEFT just warns "no modules matched," and you train nothing. (b) A newly-initialized task head (`score`/`classifier`) or a base-model BatchNorm's `running_mean/var` are **not** saved unless listed in `modules_to_save` — reload restores the base's random head / original BN stats → garbage / non-reproducible outputs.
 **Fix**: enumerate real names with `[n for n,_ in model.named_modules()]` and set `LoraConfig(target_modules=[...])` (or `'all-linear'`); confirm with `model.print_trainable_parameters()` and that you see `lora.Linear` layers. Add the new head and any base Norm layers to `modules_to_save` (e.g. `modules_to_save=['classifier','normalization']`) — or pass the right `task_type` (PEFT auto-adds the standard head). ([PEFT troubleshooting](https://huggingface.co/docs/peft/developer_guides/troubleshooting))
 
----
-
 ## Training-dynamics dashboard — instrument it so the failure is visible
 
 ### O22 — Update-to-weight L2 ratio ≈ 1e-3 (the single highest-signal LR dial)
@@ -165,8 +141,8 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 
 ### O24 — GradScaler scale drifting toward 0 = silent persistent fp16 overflow
 **Symptom**: an fp16-AMP run looks healthy (loss prints, no crash) but isn't learning or silently skips many optimizer steps — because you never plotted `scaler.get_scale()` and the loss-scale has cratered from 65536 toward ~1 (or sawtooths down).
-**Root cause**: GradScaler adapts a multiplicative loss-scale: on any inf/NaN grad it multiplies by `backoff_factor=0.5` **and skips** that `step()`; after `growth_interval=2000` clean steps it multiplies by `growth_factor=2.0` (`init_scale=65536`). A few early backoffs are normal calibration (P5/P10), but a scale that keeps halving and stays low means the forward keeps producing values `> fp16's 65504` → grads overflow → step skipped every step → weights frozen while loss still looks plausible. The config "fp16" tells you nothing; only the live scale reveals it.
-**Fix**: add `scaler.get_scale()` and a skipped-step counter to the dashboard. Healthy: a high plateau (`2^13..2^16`) after early calibration. Bad: monotonic decay toward 1, or step-count not advancing with iteration count. Lever when it collapses: switch **fp16 → bf16** (no scaler; fp32 exponent range absorbs the large activations — highest leverage), or keep the overflow-prone block (final logits / attention) in fp32 via a nested `autocast(enabled=False)`, plus z-loss / qk-norm (P15/P16). Don't "fix" it by lowering `init_scale`. ([torch.amp GradScaler](https://docs.pytorch.org/docs/stable/amp.html)) (mechanism → P5/P10.)
+**Root cause**: the config "fp16" tells you nothing — only the live loss-scale reveals persistent overflow, where every step is skipped and the weights freeze while the loss still looks plausible. Scaler mechanics and the levers when it collapses → `references/training/precision-stability.md` P5 / P10.
+**Fix**: add `scaler.get_scale()` and a skipped-step counter to the dashboard. Healthy: a high plateau (`2^13..2^16`) after early calibration. Bad: monotonic decay toward 1, or the step count not advancing with the iteration count.
 
 ### O25 — Rising dead-ReLU / zero-activation fraction → a slice of the net is permanently off
 **Symptom**: capacity quietly vanishes — a layer's outputs are increasingly all-zero, loss plateaus above where it should, and adding width doesn't help. No crash; it just under-fits. Worst case the net degenerates toward a constant function.
@@ -177,8 +153,6 @@ To jump: `grep -in '<keyword>' references/training/convergence-debugging.md` (e.
 **Symptom**: scalar dashboards (loss, one grad-norm) look fine yet the model under-performs or destabilizes — a mean/norm hides the shape: activations drifting to a saturated tail, weights collapsing to a spike at 0 (a layer dying, O25), or a gradient distribution growing fat outlier tails all read as an unremarkable scalar.
 **Root cause**: norms and means are lossy summaries — a healthy spread and a bimodal/all-saturated/all-zero distribution can share the same L2 norm. The diagnostic signal is the **change in shape over training**, which a scalar can't show.
 **Fix**: periodically (every few hundred steps — histograms aren't free) log `SummaryWriter.add_histogram(tag, values, global_step)` for each layer's **weights**, its **gradients** (after `backward`, before `zero_grad`), and key **activations** (forward hook). Read the time-evolution: weights collapsing to a spike = a layer dying; gradient histograms collapsing to ~0 = vanishing (lever: residual/norm/init, P17); fat tails = clip + lower LR (P13/P12); activations wandering into a saturating tail = init/normalization fix (P17). Pair with the scalars above. ([SummaryWriter.add_histogram](https://docs.pytorch.org/docs/stable/tensorboard.html), [Karpathy recipe — visualize weights/activations](https://karpathy.github.io/2019/04/25/recipe/))
-
----
 
 ## Pointers — adjacent mechanics catalogued elsewhere
 

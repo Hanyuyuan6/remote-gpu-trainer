@@ -4,8 +4,6 @@ Load this when a model's output is constant/degenerate across distinct inputs, o
 
 The running example is a `measurement → image` reconstruction/adapter net (an encoded measurement vector → structured image output), but **every check generalizes** to any "encode an input vector → produce a structured output" model.
 
----
-
 ## The fingerprint: output cross-sample cosine ≈ 1.0
 
 A `measurement→X` net whose output is near-identical across *distinct* inputs is **ignoring its input**, not learning slowly. Two equivalent scalar tells:
@@ -14,8 +12,6 @@ A `measurement→X` net whose output is near-identical across *distinct* inputs 
 - **`real == shuffle`** in a conditioning control (decode each sample against ANOTHER sample's tokens). A *bit-identical* `real == shuffle` (e.g. `0.126 == 0.126`) means the swap changed nothing ⇒ tokens are sample-invariant ⇒ collapsed. A genuine reader gives `real ≫ shuffle`; `real ≈ shuffle ≈ chance` says the same with scatter.
 
 These are cheaper and more decisive than any loss curve.
-
----
 
 ## Step 1 — Check the INPUT cross-sample cosine first
 
@@ -60,9 +56,7 @@ A net that de-collapses on the train split but stays collapsed on val/test usual
 
 When the SAME failure signature (collapse, `real==shuffle`, chance-floor metric) survives **every architecture change** — frozen vs LoRA, encoder A vs B, with vs without an aux head, reconstruction vs distillation — the cause is **upstream of the architecture**: input pipeline, normalization, or target construction. Each pivot then invents a fresh just-so story for the *same* number and burns a retrain.
 
-The tell is the **invariance itself** — a real architectural cause would shift the signature. (Real: ~15 successive adapter redesigns each "explained" a collapse that was really one missing per-feature input standardization; once standardized, the *first, simplest* architecture de-collapsed — `adapter_cosine 0.997 → 0.80`.)
-
----
+The tell is the **invariance itself** — a real architectural cause would shift the signature. (Real: a long series of adapter redesigns each "explained" a collapse that was really one missing per-feature input standardization; once standardized, the *first, simplest* architecture de-collapsed — `adapter_cosine 0.997 → 0.80`.)
 
 ## Two confounders to avoid while diagnosing
 
@@ -70,13 +64,9 @@ The tell is the **invariance itself** — a real architectural cause would shift
 
 **A dense aux loss at weight 1 can do nothing.** `reduction='mean'` divides the gradient by element count (`3·336·336` ⇒ ~`3e-6`/px at w=1), swamped by a concentrated competing loss. Scale the aux weight ~N (element count) and **verify the aux actually moves** before concluding it's ineffective.
 
----
-
 ## Kill-it-early rule
 
 The de-collapse signal (output cross-sample cosine; or a tracker's unique-prediction-count / predicted-class histogram) settles within **~1 epoch**. Cosine pinned near 1.0 + predictions piling onto a single class ⇒ it will not recover. A multi-hour run to a foregone `real==shuffle` is wasted GPU — watch that signal live and early-stop in epoch 1.
-
----
 
 ## Quick command sketch (adapt to your model)
 

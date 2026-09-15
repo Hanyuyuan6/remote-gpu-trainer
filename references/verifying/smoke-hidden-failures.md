@@ -18,7 +18,7 @@ for ~10–50× more steps **into a separate log dir** and read the trajectory:
 | **loss value diverges to ±∞ or goes negative** | **math bug in the loss** (see §2) |
 | metric *decreases* with more steps while loss misbehaves | instability or loss/metric mismatch — inspect the loss math |
 
-Real endpoints from one session: a 7-stage unrolled-transformer reconstructor read
+Real endpoints: a 7-stage unrolled-transformer reconstructor read
 3.3→1.1 dB over a 10-step smoke (looked like divergence) but climbed to **20 dB** at 120
 steps — pure undertraining; a multi-rate net stuck at ~11 dB climbed to **18 dB** at 100
 steps. Neither was a bug. **Do not conclude "diverging/broken" from a smoke-length run.**
@@ -99,7 +99,6 @@ metric **byte-identical across two runs** (same seed → same near-random state 
 giveaway — e.g. an EMA ε-MSE of exactly 0.8941 twice). Do not silently clear the checkpoint dir. Move the
 suspect directory to a uniquely named quarantine (or mark it read-only), start the retry in a fresh directory,
 and keep a provenance pointer. Delete the quarantined artifacts only after the user confirms they have no
-recovery or audit value.
-re-running, or assert the loaded ckpt's epoch/timestamp is the new one. This is the
-"trust the artifact you loaded" invariant one level deeper: also trust it is the artifact
+recovery or audit value. Either way, assert that the loaded checkpoint's epoch/timestamp is the new one.
+This is the "trust the artifact you loaded" invariant one level deeper: also trust it is the artifact
 you *think* you loaded.

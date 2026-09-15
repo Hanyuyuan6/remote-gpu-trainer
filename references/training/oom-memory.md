@@ -1,15 +1,8 @@
-> Applies to both local and remote runs.
-
 # OOM & fitting a model that doesn't — VRAM + host-RAM out-of-memory during training
 
-How to read a CUDA OOM trace, understand *what* fills the card (params vs optimizer vs gradients vs
-activations vs fragmentation), and apply the fixes **in cost order** — from a free batch-size cut to
-ZeRO-3/QLoRA sharding. This layer owns *making training RUN and fit*; **references/verifying/methodology.md** owns
-*is the resulting number correct*. Cross-link it (**REQUIRED**) wherever a "fix" risks changing the
-science (shrinking the one variable under test, swapping precision, changing seq-len).
-
-To jump: `grep -in '<keyword>' references/training/oom-memory.md` (e.g. `expandable`, `checkpoint`,
-`zero`, `validation`, `snapshot`, `lora`, `empty_cache`, `longest`, `fragment`).
+This layer owns making training RUN and fit — reading the CUDA OOM trace, knowing what fills the card, and
+applying the fixes in cost order; whether the post-fix number is still correct is
+`references/verifying/methodology.md`.
 
 ## Table of contents
 
@@ -18,8 +11,6 @@ To jump: `grep -in '<keyword>' references/training/oom-memory.md` (e.g. `expanda
 - **OOM at a specific step** — M14 first backward · M15 validation/eval · M16 the longest batch · M17 step-2 (optimizer alloc)
 - **Debugging** — M18 memory_summary · M19 the snapshot + visualizer · M20 empty_cache & "leak" myths
 - **Pointers** — host-RAM cgroup-OOM → gotchas_universal.md U9 · VRAM-vs-cgroup → U10 · zombie-VRAM → U11
-
----
 
 ## Read it first
 
@@ -55,7 +46,7 @@ capacity; Z GiB already allocated; A GiB free; B GiB reserved in total by PyTorc
   blocks exist but none is contiguous enough). This is the explicit PyTorch diagnostic: "if reserved but
   unallocated is large, set `expandable_segments:True`" (M8).
 - **free A** — driver-visible free on the card; if A is large but the alloc still fails, suspect another
-  process (M3) or a zombie holding VRAM (gotchas_universal.md **U11**).
+  process (M3) or a zombie holding VRAM (`references/run-remote/gotchas_universal.md` **U11**).
 
 Sources: PyTorch forums thread on the trace fields
 (https://discuss.pytorch.org/t/torch-outofmemoryerror-cuda-out-of-memory/217669); the reserved-vs-allocated
@@ -67,14 +58,12 @@ A `torch.OutOfMemoryError: CUDA out of memory` (a Python traceback) is **VRAM** 
 / **exit 137** with **no traceback** is the Linux kernel killing the process for **host-RAM**
 (cgroup `memory.max`) exhaustion — almost always `num_workers × a big in-RAM object`. These have opposite
 fixes and live in the universal catalog:
-- host-RAM cgroup-OOM (`Killed`, exit 137, dataloader workers) → **gotchas_universal.md U9**.
-- VRAM-OOM distinct from cgroup, fragmentation, concurrent-job sizing → **gotchas_universal.md U10**.
-- "empty GPU" still OOMs (a zombie holds VRAM nvidia-smi can't attribute) → **gotchas_universal.md U11**.
+- host-RAM cgroup-OOM (`Killed`, exit 137, dataloader workers) → **`references/run-remote/gotchas_universal.md` U9**.
+- VRAM-OOM distinct from cgroup, fragmentation, concurrent-job sizing → **`references/run-remote/gotchas_universal.md` U10**.
+- "empty GPU" still OOMs (a zombie holds VRAM nvidia-smi can't attribute) → **`references/run-remote/gotchas_universal.md` U11**.
 
 Confirm which one before "fixing": `dmesg | grep -iE 'killed process|out of memory'` non-empty ⇒ host-RAM
 kernel kill (U9), **not** a CUDA OOM. Do not shrink the model to "fix" a host-RAM kill.
-
----
 
 ## Fixes, in order (cheapest / least-science-disturbing first)
 
@@ -105,19 +94,20 @@ references/verifying/methodology.md). Rungs 8–10 change *where* state lives, n
 sub-batches before one optimizer step — same math, lower peak activation memory. Keep micro-batch as large
 as fits (batch 4 × accum 16 beats batch 1 × accum 64 — better GPU utilization).
 Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (gradient accumulation).
-Caveat: with token-level loss + a custom loop, naive accumulation can mis-weight the loss across uneven
-sub-batch token counts — a correctness issue owned by **references/verifying/methodology.md** (REQUIRED).
+Caveat: accumulation also multiplies the effective LR unless the loss is divided by `accum_steps`, and with
+token-level loss it can mis-weight uneven sub-batch token counts →
+`references/training/convergence-debugging.md` O9.
 
 ### M6 — bf16 mixed precision (prefer bf16 over fp16 on Ampere+)
 
 **Symptom**: fp32 training; activations dominate; the GPU is Ampere (A100/30xx) or newer.
 
 **Fix**: `bf16=True` (HF `TrainingArguments`) or `torch.autocast("cuda", dtype=torch.bfloat16)`. The main
-win is **activations stored in 16-bit**. **bf16 over fp16**: bf16 has fp32's exponent range, so it needs no
-loss-scaling and won't overflow/underflow — fewer NaN failures. Note fp16 can *increase* memory at small
-batch (it keeps both fp16 and fp32 weight copies); bf16 is the safer default where supported.
+win is **activations stored in 16-bit**. Note fp16 can *increase* memory at small batch (it keeps both fp16
+and fp32 weight copies); **prefer bf16 over fp16** where supported →
+`references/training/precision-stability.md` P1.
 Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (mixed precision; bf16 needs
-Ampere+). NaN/divergence after switching precision = a numerics question → **references/verifying/methodology.md**.
+Ampere+).
 
 ### M7 — Activation / gradient checkpointing (trade compute for activation memory)
 
@@ -141,7 +131,8 @@ instead of each `cudaMalloc` being an unmergeable block — which is the root of
 Source: PyTorch CUDA notes (https://docs.pytorch.org/docs/stable/notes/cuda.html) and the allocator devlog
 (https://docs.pytorch.org/devlogs/eager/2026-06-01-cuda-caching-allocator/). Alternative knob if fragmenting
 on *large* blocks: `max_split_size_mb:<N>` (stops the allocator splitting blocks above N MiB). This is the
-same knob referenced in **gotchas_universal.md U10** — set it as a default on the box, it is nearly free.
+same knob referenced in **`references/run-remote/gotchas_universal.md` U10** — set it as a default on the
+box, it is nearly free.
 Version note: `expandable_segments` is still flagged experimental; it has known interop edges with some VMM
 allocators (e.g. NCCL `ncclMemAlloc`, pytorch/pytorch#165419) — if a custom-allocator stack misbehaves,
 drop it.
@@ -178,13 +169,11 @@ expect a multi-× slowdown; on a metered box, weigh it against renting a bigger 
 with seq-len/resolution.
 
 **Fix (cheapest variant first)**:
-- **Use SDPA / FlashAttention** to avoid materializing the full seq² attention matrix —
-  `attn_implementation="sdpa"` (default in PyTorch 2.1.1+) or `"flash_attention_2"`. No accuracy change.
+- **Use SDPA / FlashAttention** so the full seq² attention matrix is never materialized (no accuracy
+  change) → `references/training/throughput-profiling.md` T14 for the flags, versions, and caveats.
 - Only then **shorten seq-len / lower image resolution / patchify** — this **changes the task/science**;
-  declare it and re-verify (the resolution-change-broke-training failure mode is owned by
-  **references/verifying/methodology.md**, REQUIRED).
-Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (SDPA, attention backends) and
-model-memory-anatomy (attention score matrix grows with seq²).
+  declare it and re-verify.
+Source: model-memory-anatomy (the attention score matrix grows with seq²).
 
 ### M12 — 8-bit & paged optimizers (cut the 8 B/param optimizer state to ~2 B)
 
@@ -195,8 +184,8 @@ model-memory-anatomy (attention score matrix grows with seq²).
 `optim="adafactor"` (stores row/column moments instead of per-element → much less memory, **slower
 convergence**). **Paged** variants additionally page optimizer state to CPU on spikes to survive transient
 peaks. Source: https://huggingface.co/docs/transformers/main/en/perf_train_gpu_one (optimizers) and
-model-memory-anatomy ("quantized Adam → 2 bytes/param"). Adafactor's convergence change is a science
-question → **references/verifying/methodology.md** (REQUIRED) before trusting its ablation deltas.
+model-memory-anatomy ("quantized Adam → 2 bytes/param"). Adafactor changes the optimization itself — its
+ablation deltas are not comparable to an AdamW baseline until that is re-verified.
 
 ### M13 — LoRA / QLoRA (finetuning only: don't train the full model)
 
@@ -208,10 +197,8 @@ for the adapter (a tiny fraction of params), so the 18 B/param cost nearly vanis
 optimizers), train fp16/bf16 adapters on top — reported to finetune a **65B model on a single 48 GB GPU**
 with no accuracy degradation vs 16-bit. Source: QLoRA paper
 (https://arxiv.org/abs/2305.14314) and repo (https://github.com/artidoro/qlora). Note: LoRA *changes model
-capacity* — it is a different optimization target, not a free OOM trick. Whether the LoRA result matches
-full-finetune is a science claim → **references/verifying/methodology.md** (REQUIRED).
-
----
+capacity* — it is a different optimization target, not a free OOM trick, and "LoRA matches full-finetune
+here" is a science claim, not an OOM result.
 
 ## OOM at a SPECIFIC step (the step number is the diagnosis)
 
@@ -268,9 +255,9 @@ backward buffers. Source: the memory-snapshot timeline shows optimizer state app
 (https://pytorch.org/blog/understanding-gpu-memory-1/).
 
 **Fix**: budget for the **post-step** peak, not step-1 — measure peak with `max_memory_allocated()` *after*
-two full steps, not one. Then apply M12 (8-bit optimizer halves this jump) or M5.
-
----
+two full steps, not one. The cheapest fix when the jump comes from the multi-tensor path is
+`foreach=False` → `references/training/convergence-debugging.md` O11; then M12 (an 8-bit optimizer halves
+this jump) or M5.
 
 ## Debugging tools (measure, don't guess)
 
@@ -326,15 +313,13 @@ reserved memory is a leak.
 Real OOM-mechanics leaks (accumulate-loss-tensor, no `detach`) belong here; whether a *metric* drift is a
 real effect vs a bug belongs to **references/verifying/methodology.md** (REQUIRED).
 
----
+## Pointers — memory gotchas catalogued elsewhere
 
-## Pointers — memory gotchas catalogued elsewhere (do NOT restate)
-
-- **Host-RAM cgroup-OOM** (bare `Killed` / exit 137, `num_workers × big tensor`) → **gotchas_universal.md U9**.
-- **VRAM-OOM vs cgroup-OOM**, concurrent-job sizing, the `expandable_segments` one-liner → **gotchas_universal.md U10**.
-- **Zombie holds VRAM nvidia-smi can't see** (OOM on an "empty" GPU) → **gotchas_universal.md U11**.
-- **Disk-full crashes `torch.save`** (not memory, but the other "out of space") → **gotchas_universal.md U6**.
+- **Host-RAM cgroup-OOM** (bare `Killed` / exit 137, `num_workers × big tensor`) → **`references/run-remote/gotchas_universal.md` U9**.
+- **VRAM-OOM vs cgroup-OOM**, concurrent-job sizing, the `expandable_segments` one-liner → **`references/run-remote/gotchas_universal.md` U10**.
+- **Zombie holds VRAM nvidia-smi can't see** (OOM on an "empty" GPU) → **`references/run-remote/gotchas_universal.md` U11**.
+- **Disk-full crashes `torch.save`** (not memory, but the other "out of space") → **`references/run-remote/gotchas_universal.md` U6**.
 - **Multi-GPU NCCL / fabric** for FSDP/ZeRO launches → **references/run-remote/multinode.md**.
-- **Is the post-fit number correct** (precision swap, seq-len change, LoRA-vs-full, accumulation loss
-  weighting, determinism) → **references/verifying/methodology.md** (REQUIRED — this layer makes it *fit and run*; that
-  one decides if the *result is true*).
+- **Is the post-fit number correct** (precision swap, seq-len change, LoRA-vs-full, optimizer swap,
+  accumulation loss weighting, determinism) → **references/verifying/methodology.md** (REQUIRED — this
+  layer makes it *fit and run*; that one decides if the *result is true*).

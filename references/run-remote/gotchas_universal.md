@@ -7,8 +7,7 @@ value* in the fix — the rule stays here, the value lives in a profile. Platfor
 TB-pin, the wandb-key classifier, the network_turbo proxy literal) do NOT live here — see each profile's
 TOP GOTCHAS section.
 
-To jump: `grep -in '<keyword>' references/run-remote/gotchas_universal.md` (e.g. `inode`, `egress`, `xid`, `crlf`,
-`stdin`, `zombie`). Numbering `U1…` is stable; cross-platform additions continue the same series.
+Numbering `U1…` is stable; cross-platform additions continue the same series.
 
 ## Table of contents (by theme)
 
@@ -16,16 +15,14 @@ To jump: `grep -in '<keyword>' references/run-remote/gotchas_universal.md` (e.g.
 - **Disk & Storage** — U6 disk-full-crashes-torch.save · U7 storage-fails-on-inodes · U8 stage-hot-data-to-NVMe
 - **Memory & OOM** — U9 cgroup-OOM-num_workers×tensor · U10 VRAM-OOM-vs-cgroup-OOM · U11 zombie-VRAM-nvidia-smi-cant-see · U41 host-metrics-lie/oom_kill-counter
 - **Transfer & Download** — U12 scp-resets→resumable-loop · U13 scp-into-uncreated-dir · U14 egress-surcharge+same-AZ · U15 compress-before-the-wire
-- **Monitoring** — U16 stale-waiters/zombie-monitors · U17 unquoted-pipe-grep-hang+robust-poll · U18 two-leg-remote-self-completion · U19 tracker-deletion-lags · U20 hosted-tracker-survives-teardown · U39 live-panel/TB-silently-empty (path/port/process mismatch) · U43 block-buffered-stdout-looks-frozen
+- **Monitoring** — U16 stale-waiters/zombie-monitors · U17 unquoted-pipe-grep-hang+robust-poll · U18 two-leg-remote-self-completion · U19 tracker-deletion-lags · U20 hosted-tracker-survives-teardown · U39 live-panel/TB-silently-empty (path/port/process mismatch) · U43 block-buffered-stdout-looks-frozen · U44 ship-back-script-needs-`__main__`-guard
 - **GPU health** — U21 nvidia-smi-util%-is-a-liar · U22 Xid-48/79-dead-GPU-re-rent · U23 thermal/power-throttle-steals-25-40%
 - **Dataloader & IO** — U24 dataloader-starvation-knobs · U25 many-small-files→shard-into-tar · U40 intra-op-thread-oversubscription-starves-GPU
-- **Env & Container** — U26 CRLF-breaks-sh · U27 overlay-config-files · U28 CUDA-toolkit-vs-driver-vs-torch · U29 install-from-lockfile · U30 pin-image-by-sha256 · U31 container-runs-but-no-GPU · U42 box-code-drift/verify-deploy · U44 ship-back-script-needs-__main__-guard
+- **Env & Container** — U26 CRLF-breaks-sh · U27 overlay-config-files · U28 CUDA-toolkit-vs-driver-vs-torch · U29 install-from-lockfile · U30 pin-image-by-sha256 · U31 container-runs-but-no-GPU · U42 box-code-drift/verify-deploy
 - **Cost & teardown** — U32 task-epoch-default · U33 silent-checked-sync
 - **Secrets & trackers** — U34 secrets-via-stdin · U35 tracker-offline-without-key
 - **Delegated (cross-link only)** — U36 cuDNN-nondeterminism · U37 matplotlib-2^16 · U38 GPU-0%-util-data-bound
 - **Pointers** — spot/preemption → `references/run-remote/spot-resilience.md`; multi-node/NCCL → `references/run-remote/multinode.md`
-
----
 
 ## Process & SSH
 
@@ -119,8 +116,6 @@ and put a VISIBLE activation in the launch ssh command:
 re-activating is harmless. Never `--no-verify` / never bypass the guard. (On a single-tenant rental whose
 base IS the env, the right move is to exempt remote/ephemeral base, not to clone it — that's a profile fact.)
 
----
-
 ## Disk & Storage
 
 ### U6 — Disk-full crashes `torch.save` with `iostream error`
@@ -180,8 +175,6 @@ throughput than instance-local NVMe — HDD-vs-NVMe gaps reach ~35×.
 **Fix**: at job start, copy the working dataset from the durable/shared tier to instance-local NVMe scratch,
 train against the local copy, write checkpoints back to durable storage. The local-NVMe path is a profile
 fact (`local_nvme` in the frontmatter); the stage-then-train discipline is universal. Pairs with U24/U25.
-
----
 
 ## Memory & OOM
 
@@ -253,8 +246,6 @@ shrink your batch or blame your code (a neighbor genuinely starving you on the s
 throttle territory or a re-rent, not a code fix). Sharpens the **U3** vanished-process ladder: the
 authoritative OOM check is the cgroup `oom_kill` counter, not host `dmesg`/`free` noise.
 
----
-
 ## Transfer & Download
 
 ### U12 — `scp -r` of a large dir resets mid-transfer → per-dir resumable loop
@@ -303,13 +294,11 @@ durable local storage, not per-epoch from a remote bucket. Record `free_egress` 
 weights fp16/int8 where the task tolerates it. Compounds with U14 (less egress $) and U12 (fewer bytes to
 resume). Pairs with U25 (tar shards compress and transfer as one stream).
 
----
-
 ## Monitoring
 
-> **Host-portability note:** `run_in_background`, `TaskStop`, `Monitor`, the ~600 s foreground cap, and
-> `/loop` / `/schedule` in this section are **Claude Code** harness primitives. On another Agent-Skills host
-> (Codex / Cursor / Gemini / Antigravity / …) map them to that agent's equivalents per
+> **Host-portability note:** any background/task/scheduler primitive named in this section, and the ~600 s
+> foreground cap, are **Claude Code** harness primitives. On another Agent-Skills host (Codex / Cursor /
+> Gemini / Antigravity / …) map them to that agent's equivalents per
 > `references/run-remote/monitoring_patterns.md` §7; the hang/exit physics (an unquoted `|` reading stdin, a
 > never-*exiting* waiter) are pure shell and hold everywhere.
 
@@ -319,49 +308,38 @@ resume). Pairs with U25 (tar shards compress and transfer as one stream).
 ssh-polling every ~20 s, while the GPU is idle and the experiment finished hours ago.
 
 **Root cause**: every kill+restart of a flaky saga armed a NEW `until ssh grep MARKER; do sleep; done`
-waiter but never stopped the OLD one — its marker (in a superseded log) never appears, so it loops forever.
-A `run_in_background` waiter is **not** time-capped (a 781 s task ran to completion + notified; the ~600 s
-cap is on **foreground** Bash only). The real silent-failure mode is a waiter that never EXITS (U17).
+waiter but never stopped the OLD one — its marker (in a superseded log) never appears, so it never EXITS (U17).
 
-**Fix**: one waiter per live run — superseding a run, cancel the old watcher with the current host's real
-task-control capability (Claude Code: `TaskStop`; cross-session IDs must be dismissed from its UI).
-Multi-hour wait → a persistent **local watcher** when the host truly provides one (Claude Code: `Monitor`)
-+ a stall-detector emit so a hung run still notifies. A session-bound watcher dies on
-session resume → after any resume, check the remote ground-truth directly (`tmux ls`, `grep DONE log`,
-`nvidia-smi`); never trust a monitor that may be gone (principle #3).
+**Fix**: → `references/run-remote/monitoring_patterns.md` §4 (one waiter per live run, cancelled through the
+host's real task-control capability; lifetime matched to the wait; remote ground truth re-checked after any
+resume). Verify your host's background-task cap and restart behaviour there (§7) instead of assuming one.
 
 ### U17 — A silent background monitor that never returns: usually an unquoted `|` in grep
 
-**Symptom**: a `run_in_background` ssh monitor never returns / never notifies; `pgrep` shows a process
-"alive." The run looks hung — but the actual job finished and wrote results fine.
+**Symptom**: a background ssh monitor never returns / never notifies; `pgrep` shows a process "alive."
+The run looks hung — but the actual job finished and wrote results fine.
 
-**Root cause**: the wrapper never EXITED because a sub-command blocks forever. The classic bug is an
-**unquoted `|` in grep** — `grep -hE noise-sweep|snr=|wrote log` — the shell splits it into THREE piped
-commands, and the first (`grep -hE noise-sweep`, no filename) reads **stdin** → blocks forever → the
-pipeline never returns → ssh never returns → the local background process never exits → no completion
-notification. (Background tasks notify on EXIT only — no 600 s cap; foreground Bash is the capped one, U16.)
+**Root cause**: the wrapper never EXITED — an **unquoted `|` in grep** (`grep -hE noise-sweep|snr=|wrote log`)
+splits into three piped commands and the first, with no filename, reads **stdin** and blocks forever;
+background waiters notify on EXIT only.
 
-**Fix — robust remote-poll template**:
-- **Quote every regex AND give grep a filename**: `grep -hE 'noise-sweep|snr=|wrote' log` (a `|` inside quotes is alternation; a filename means read the file, never stdin).
-- **Bound the ssh**: `ssh -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 …` — a blip self-kills in ~30 s instead of half-open hanging for minutes.
-- **Short-connection poll, not one long-held ssh**: each poll = ssh in → check → disconnect; loop locally with a bounded counter.
-- **Verify by artifact, not notification**: when it "looks done," Read the local output + a fresh `ssh 'grep DONE log; tmux ls; nvidia-smi'` to confirm ground truth (cross-link references/verifying/methodology.md **REQUIRED**); don't wait on a notification that may never fire.
+**Fix**: → `references/run-remote/monitoring_patterns.md` §0 fact 4 and §1 (quote the regex AND give grep a
+filename, bound the ssh, short-connection poll, verify by artifact not by notification).
 
 ### U18 — "I'll check periodically" is a lie unless a trigger is armed; two-leg remote self-completion
 
 **Symptom**: a promise to monitor a multi-hour remote run, then no report for a day — because between turns
 the assistant does not run. A cloud scheduler set up to "ssh in and check" silently can't reach the box.
 
-**Root cause**: two conflated things. (a) Making the REMOTE self-complete (a waiter that blocks on a log
-marker then runs eval) guarantees RESULTS but gives no *reporting cadence* — nothing re-invokes the
-assistant on a timer. (b) A cloud schedule runs in an isolated sandbox with its own checkout and **no access
-to the local SSH key or network** → it cannot `ssh` the rented box, and the SSH private key must **never** go
-into a cloud agent (secret-leak).
+**Root cause**: two conflated things. (a) Remote self-completion guarantees RESULTS but gives no *reporting
+cadence* — nothing re-invokes the assistant on a timer. (b) A cloud schedule runs in an isolated sandbox with
+**no access to the local SSH key or network** → it cannot `ssh` the rented box, and the SSH private key must
+**never** go into a cloud agent (secret-leak).
 
-**Fix — the two-leg pattern**:
-- **Remote self-completion (guaranteed, survives session/SSH death)**: chain `train → eval → touch marker` under one `nohup ... </dev/null >log 2>&1 &`. Detect "done" by a **log marker** (`grep -q 'QUEUE DONE' master.log`), NEVER by `pgrep` — the waiter's own command line contains the pattern, so `pgrep -f` matches itself and loops forever (U17).
-- **Live progress (best-effort)**: a session-bound local loop (e.g. `/loop 30m` / cron `3,33 * * * *`) that ssh-polls with the *local* key. Be honest it dies when the session closes — the remote still finishes; the user re-pings to pull.
-- **Don't promise autonomous cross-session polling you can't deliver.** (`tmux` is often absent on a fresh box and `apt-get install` fails offline — `nohup ... </dev/null >log 2>&1 &` is zero-dependency and survives SSH drop; verify with `pgrep -af <script>`.) Full architecture → `references/run-remote/monitoring_patterns.md`.
+**Fix**: → `references/run-remote/monitoring_patterns.md` §5 (the two legs) and §7 (per-host mapping). Note
+that `tmux` is often absent on a fresh box and `apt-get install` fails offline, so
+`nohup ... </dev/null >log 2>&1 &` is the zero-dependency detach that survives an SSH drop; verify it with
+`pgrep -af <script>`.
 
 ### U19 — Tracker run deletion lags; a fresh export resurrects "deleted" runs
 
@@ -389,6 +367,34 @@ metric history lived only there.
 as the monitor instead of brittle ssh-tail. Cross-link huggingface-skills:huggingface-trackio **REQUIRED**
 for the `init/log/finish/alert` mechanics and `space_id` sync.
 
+### U39 — Live monitoring shows nothing (TensorBoard panel empty / `INACTIVE`) but training is fine
+
+**Symptom**: the platform's TensorBoard tile / web panel is blank or `INACTIVE`, or a backgrounded watcher
+goes silent — yet the run is healthy: the loss advances on the box and the event/log files exist. You
+conclude "monitoring is broken" or, worse, "the run died," and waste a check or restart a fine run.
+
+**Root cause**: live observability breaks in three platform-shaped ways, none of which is a training
+failure. (1) **Path mismatch** — the platform's built-in panel reads a FIXED logdir/port and your logger
+wrote elsewhere, so the panel sees zero runs (AutoDL pins `tensorboard --logdir /root/tf-logs`; a
+`SummaryWriter(log_dir="runs/<exp>")` is invisible to it). (2) **Process died / never backgrounded** — the
+TB server or the watcher ran in the foreground or under the session and was killed at the foreground cap
+or on session/SSH drop, so nothing serves the curves. (3) **Port not exposed** — the service is up on the
+box but the port was never tunnelled / declared, so the panel can't reach it.
+
+**Fix** (the rule is universal; the *value* is per-profile): (1) **align the path** — point your logger at
+the panel's pinned dir, OR symlink the pinned dir at your output (`ln -sfn <your-runs>/<exp> <pinned>/<exp>`);
+no retrain — the running writer keeps appending and the panel reloads it. The pinned path lives in the
+profile (AutoDL `/root/tf-logs`, **AD7**; elsewhere write under the durable mount). (2) **run TB + the
+watcher under the detach primitive** (tmux / nohup / the profile's `DETACH`), never foreground, so they
+survive the session and the ~600 s cap (`references/run-remote/monitoring_patterns.md` §1; cross-host background →
+§7). (3) **expose the port the platform's way** — CN built-in tiles declare it at rent time
+(`profiles/china.md`), RunPod via its HTTP proxy (100 s Cloudflare cap, fine for a TB UI,
+`profiles/runpod.md`), Lambda / Paperspace / bare-SSH via an `ssh -L 6006:localhost:6006` tunnel
+(`profiles/generic-ssh.md`, `profiles/lambda.md`). Before blaming the
+panel, verify ground truth: the event file is non-empty (`ls -la <logdir>; du -sh <logdir>`) and TB
+answers locally (`curl -s localhost:<port>/ | head`). For curves that must **survive teardown**, don't
+depend on a box-local panel at all → a hosted tracker (**U20**).
+
 ### U43 — A detached run's log looks frozen for minutes though training is fine: stdout is block-buffered off a TTY
 
 **Symptom**: a `nohup`/`tmux` run prints a few lines then nothing for many minutes; it reads as
@@ -415,10 +421,6 @@ the module in every worker, so any executable top-level code re-runs per worker 
 
 **Fix**: before pulling a remote-authored script into a repo (and at release time — cross-link
 `github-release` ship-day traps), check it has `if __name__ == "__main__":` around the entry path.
-Measured: a published repo's only unguarded script was exactly the one carried back from the remote box —
-the locally-authored ones all had guards.
-
----
 
 ## GPU health
 
@@ -456,8 +458,6 @@ a shared rental, cooling/power headroom is outside tenant control.
 `nvidia-smi -q -d PERFORMANCE` showing a throttle reason. A tenant can't fix cooling → **flag it and
 re-rent** a healthier box; don't read the slowdown as a model/data regression. Pairs with U21 (clocks expose
 it where util% hides it).
-
----
 
 ## Dataloader & IO
 
@@ -507,8 +507,6 @@ cgroup, not `nproc` (which reports host cores): `cat /sys/fs/cgroup/cpu.max` →
 quota/period. Bake the cap into the launch wrapper so every queue cell inherits it. Distinct from **U9**
 (workers × RAM → cgroup OOM) and **U24** (dataloader starvation); the triage that catches it is
 throughput-profiling **T3** (GPU SM% low while a python thread-storm pegs the cores).
-
----
 
 ## Env & Container
 
@@ -611,8 +609,6 @@ depends on the fix, and part of the **Phase-5 teardown gate** — a verdict prod
 verdict you think it is (principle #3). Pairs with **U29/U30** (pin deps/image): code AND environment must
 both be the version you believe.
 
----
-
 ## Cost & teardown
 
 ### U32 — A task's default epochs differ from another task's; CLI `--epochs` silently overrides the right value
@@ -647,8 +643,6 @@ fi
 Until a download is verified locally, trust the **data-disk** copy, not the "synced" log line. The shipped
 `scripts/run_one.sh.template` carries the checked version.
 
----
-
 ## Secrets & trackers
 
 ### U34 — Move credentials to the box without the secret ever appearing in a command
@@ -656,16 +650,11 @@ Until a download is verified locally, trust the **data-disk** copy, not the "syn
 **Symptom**: pasting a key into an ssh/scp command leaks it into shell history, transcripts, and hook logs;
 security hooks (rightly) block scp-ing a whole `~/.netrc` (it carries other machines' credentials).
 
-**Root cause**: any secret inside a command string is captured by history/transcript/hook logging.
+**Root cause**: any secret inside a command string is captured by history/transcript/hook logging; a
+shared/durable FS additionally exposes it to co-tenants and to platform upload classifiers.
 
-**Fix**: stream exactly one machine block via **stdin** — the value flows file→pipe→file and never appears in
-any command text or output:
-```bash
-grep -A 2 'machine api.wandb.ai' ~/.netrc | ssh <host> 'umask 077; cat > /root/.netrc && chmod 600 /root/.netrc'
-```
-Verify by capability, not by echoing the value:
-`python -c "import wandb; print(wandb.Api(timeout=20).default_entity)"`. Never write the secret to a
-shared/durable FS that a platform classifier scans (that platform detail is a profile fact).
+**Fix**: → `references/run-remote/ssh_transport.md` §7 (stream one credential block via stdin to the
+per-instance disk, reference never echo, verify by capability).
 
 ### U35 — `WANDB_MODE=offline` still dies without an API key in wrapper stacks → zero curves
 
@@ -682,15 +671,13 @@ already finished without a tracker? Backfill from the train log (regex per-epoch
 `init(..., tags=["backfilled"]) → run.log(..., step=epoch)`). Still in flight? Kill and relaunch with
 `--resume <latest.pth>` (costs ≤1 epoch). Prefer a hosted tracker so metrics survive teardown (U20).
 
----
-
-## Delegated — cross-link only, do NOT restate here
+## Delegated — cross-links
 
 ### U36 — cuDNN nondeterminism
 
 Same config + seed gives slightly different metrics run-to-run (`cudnn.benchmark=True` picks the fastest
 kernel by first-batch timing). Owned by **references/verifying/methodology.md** (determinism). Cross-link
-references/verifying/methodology.md **REQUIRED**; do not restate the fix here.
+references/verifying/methodology.md **REQUIRED**.
 
 ### U37 — matplotlib `2^16`-per-axis limit on large eval visualization
 
@@ -705,35 +692,6 @@ prevent with U25 (cap + shard, don't emit a file/row per sample).
 transform with `num_workers=0` serializes data prep and starves the GPU. Owned by
 **references/verifying/methodology.md** (0%-util diagnosis). Cross-link references/verifying/methodology.md **REQUIRED**; the fix
 knobs are U24, the move-to-GPU remedy is in that skill.
-
-### U39 — Live monitoring shows nothing (TensorBoard panel empty / `INACTIVE`) but training is fine
-
-**Symptom**: the platform's TensorBoard tile / web panel is blank or `INACTIVE`, or a backgrounded watcher
-goes silent — yet the run is healthy: the loss advances on the box and the event/log files exist. You
-conclude "monitoring is broken" or, worse, "the run died," and waste a check or restart a fine run.
-
-**Root cause**: live observability breaks in three platform-shaped ways, none of which is a training
-failure. (1) **Path mismatch** — the platform's built-in panel reads a FIXED logdir/port and your logger
-wrote elsewhere, so the panel sees zero runs (AutoDL pins `tensorboard --logdir /root/tf-logs`; a
-`SummaryWriter(log_dir="runs/<exp>")` is invisible to it). (2) **Process died / never backgrounded** — the
-TB server or the watcher ran in the foreground or under the session and was killed at the foreground cap
-or on session/SSH drop, so nothing serves the curves. (3) **Port not exposed** — the service is up on the
-box but the port was never tunnelled / declared, so the panel can't reach it.
-
-**Fix** (the rule is universal; the *value* is per-profile): (1) **align the path** — point your logger at
-the panel's pinned dir, OR symlink the pinned dir at your output (`ln -sfn <your-runs>/<exp> <pinned>/<exp>`);
-no retrain — the running writer keeps appending and the panel reloads it. The pinned path lives in the
-profile (AutoDL `/root/tf-logs`, **AD7**; elsewhere write under the durable mount). (2) **run TB + the
-watcher under the detach primitive** (tmux / nohup / the profile's `DETACH`), never foreground, so they
-survive the session and the ~600 s cap (`references/run-remote/monitoring_patterns.md` §1; cross-host background →
-§7). (3) **expose the port the platform's way** — CN built-in tiles declare it at rent time (`china.md`),
-RunPod via its HTTP proxy (100 s Cloudflare cap, fine for a TB UI, `runpod.md`), Lambda / Paperspace /
-bare-SSH via an `ssh -L 6006:localhost:6006` tunnel (`generic-ssh.md`, `lambda.md`). Before blaming the
-panel, verify ground truth: the event file is non-empty (`ls -la <logdir>; du -sh <logdir>`) and TB
-answers locally (`curl -s localhost:<port>/ | head`). For curves that must **survive teardown**, don't
-depend on a box-local panel at all → a hosted tracker (**U20**).
-
----
 
 ## Pointers — gotchas catalogued elsewhere
 

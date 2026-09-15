@@ -1,14 +1,7 @@
-> Applies to both local and remote runs.
-
 # Numerical precision & training stability — make it RUN, then stop it diverging
 
-The mechanics of getting a DL run to compute *finite* numbers fast on a rented card, and of debugging it
-when the loss goes NaN or spikes. This layer owns **make-it-run + the mechanics of divergence**; it does
-NOT own *is the converged number real* / cuDNN-nondeterminism-as-a-metric-error — that is
-**references/verifying/methodology.md** (cross-link **REQUIRED** at every "is this a bug or a real effect" fork).
-
-To jump: `grep -in '<keyword>' references/training/precision-stability.md` (e.g. `tf32`, `bf16`, `scaler`,
-`nan`, `anomaly`, `z-loss`, `clip`, `warmup`, `qk`, `deterministic`).
+This layer owns make-it-run plus the mechanics of divergence; *is the converged number real* (including
+cuDNN nondeterminism read as a metric error) is **references/verifying/methodology.md**.
 
 ## Table of contents
 
@@ -19,8 +12,6 @@ To jump: `grep -in '<keyword>' references/training/precision-stability.md` (e.g.
 - **Gradients** — P18 explosion/vanishing diagnosis
 - **Repro** — P19 determinism knobs (cross-link)
 - **Pointers** — gotchas_universal.md, multinode.md, spot-resilience.md
-
----
 
 ## Precision choice
 
@@ -84,8 +75,6 @@ On V100/T4 use fp16+GradScaler (P5). FP8 (H100) is opt-in via Transformer Engine
 autocast (out of scope). Record the card next to `nvidia-smi` in Phase 0.
 URL: https://www.e2enetworks.com/blog/nvidia-a100-vs-h100-vs-h200-gpu-comparison
 
----
-
 ## AMP mechanics
 
 ### P4 — autocast: wrap ONLY forward + loss, never backward, never `.half()` the model
@@ -132,21 +121,15 @@ for x, y in loader:
     scaler.update()            # adapts the scale factor
 ```
 Early-training "skipped step" warnings as the scaler calibrates are **normal**; *persistent* skips every
-step = a real overflow (go to P10). URLs:
+step = a real overflow (go to P10). The scaler is **fp16-only**: bf16 has fp32's exponent range, so its
+gradients don't underflow — carrying a GradScaler into a bf16 run is dead weight (wasted overhead, not a
+crash), and bf16 runs plain `loss.backward(); optimizer.step()`. URLs:
 https://github.com/pytorch/pytorch/blob/main/docs/source/notes/amp_examples.rst ·
 https://docs.pytorch.org/docs/2.12/amp.html
 
 ### P6 — bf16 needs NO GradScaler (adding one is pointless, not harmful)
 
-**Symptom**: a copied fp16 recipe carries a GradScaler into a bf16 run — wasted overhead, not a crash or a wrong result.
-
-**Root cause**: bf16 has fp32's exponent range, so gradients don't underflow → loss-scaling is unnecessary
-and the scaler's skip/backoff machinery is dead weight (scale-then-unscale cancels, and it never finds an
-overflow to skip).
-
-**Fix**: for bf16, drop the scaler entirely — plain `loss.backward(); optimizer.step()`. Only fp16 (and the
-V100/T4 path) uses GradScaler.
-URL: https://docs.pytorch.org/docs/2.12/amp.html
+→ P5 (the scaler is fp16-only; for bf16 drop it entirely).
 
 ### P7 — Gradient clipping under GradScaler: `unscale_` FIRST or you clip scaled grads
 
@@ -164,8 +147,6 @@ scaler.step(optimizer); scaler.update()
 ```
 `unscale_` is idempotent-per-step (call it once). For bf16, just `clip_grad_norm_` directly — no unscale.
 URL: https://github.com/pytorch/pytorch/blob/main/docs/source/notes/amp_examples.rst
-
----
 
 ## NaN / Inf
 
@@ -234,14 +215,10 @@ divide-by-zero in a custom transform. The math is fine; the input is poison.
 
 **Fix**: guard at the data boundary — `assert torch.isfinite(x).all(), f"non-finite input @ step {step}"`
 (fail loud, with the index). A reproducible-step NaN ⇒ inspect *that batch* (seed the loader, dump the
-index); a *step-varying* NaN ⇒ a numerics/LR problem (P12), not data. And to separate a *data* spike from an
-*optimizer-state* one — the harder fork, since a poison batch and a momentum-state interaction can look alike —
-apply the **replay diagnostic (P14)**: re-run the same batches from an *earlier* checkpoint; if the spike does
-not reproduce, it is state, not data. Smoke the data first — smoke
-*content* is owned by **references/verifying/methodology.md** (cross-link **REQUIRED**).
+index); a *step-varying* NaN ⇒ a numerics/LR problem (P12), or optimizer state rather than data — tell those
+apart with the replay diagnostic (P14). Smoke the data first — smoke *content* is owned by
+**references/verifying/methodology.md** (cross-link **REQUIRED**).
 URL: https://arxiv.org/pdf/2311.03938
-
----
 
 ## Loss spikes / divergence
 
@@ -320,7 +297,7 @@ logits = model(x)
 z = torch.logsumexp(logits, dim=-1)
 loss = F.cross_entropy(logits, y) + 1e-4 * (z ** 2).mean()
 ```
-Coefficient **1e-4** is the PaLM/ST-MoE value; too large lets z-loss dominate. Standard in LLM pretraining;
+Coefficient **1e-4** is the PaLM / ST-MoE value; too large lets z-loss dominate. Standard in LLM pretraining;
 also the recommended fix for MoE router instability. URLs:
 https://medium.com/dair-ai/papers-explained-50-palm-480e72fa3fd5 · https://arxiv.org/pdf/2202.08906 ·
 https://arxiv.org/pdf/2309.14322
@@ -349,8 +326,6 @@ activations/grads too large (spike) or too small (vanish). Norm/embedding init s
 transformers; init embeddings at small std (~0.02). When unsure, copy a *known-good* config's init+norm
 scheme rather than tuning blind. URL: https://arxiv.org/pdf/2309.14322
 
----
-
 ## Gradients
 
 ### P18 — Gradient explosion vs vanishing: diagnose by logging the norm
@@ -371,8 +346,6 @@ total = sum(p.grad.detach().norm()**2 for p in model.parameters() if p.grad is n
 
 A grad-norm trace is the cheapest, highest-signal stability instrument — log it from step 1.
 URL: https://apxml.com/courses/how-to-build-a-large-language-model/chapter-24-identifying-mitigating-training-instabilities/stabilization-techniques-revisited
-
----
 
 ## Reproducibility
 
@@ -396,9 +369,7 @@ methodology, is owned by references/verifying/methodology.md (cross-link REQUIRE
 speed — enable for the datapoint that must be clean, not every throwaway run.
 URL: https://docs.pytorch.org/docs/stable/notes/randomness.html
 
----
-
-## Pointers — adjacent layers, do NOT restate here
+## Pointers — adjacent layers
 
 - **`references/run-remote/gotchas_universal.md`** — the *infra* failure modes that masquerade as numerics:
   **U6** disk-full crashes `torch.save`, **U9** cgroup-OOM (bare `Killed`, not a NaN), **U28** CUDA/driver/

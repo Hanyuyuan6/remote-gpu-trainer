@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Cross-document number-drift checker -- the single owner of cross-document reconciliation (references/verifying/methodology.md section 14).
 
-The whole delivering principle (references/delivering/principles.md, P1/P2/P8): every number in a paper / thesis /
+The delivering principle (references/verifying/methodology.md section 14; references/delivering/legacy-publication-guidance.md): every number in a paper / thesis /
 slide / README / CSV is a deterministic function of the immutable evidence layer. EVIDENCE.json
 holds the AUTHORITATIVE scalar for each reported metric. The moment a human re-types a number
 into prose, it can drift. This script greps the presentation-layer docs and reports every
 reported value that diverges from its authoritative source in EVIDENCE.json, so the cross-doc
-reconciliation in the delivery gate (P8) is mechanical, not a proofreading ritual.
+reconciliation in the delivery gate is mechanical, not a proofreading ritual.
 
 It REPORTS drift; it does not edit anything. Pure stdlib, no network, no third-party deps.
 
@@ -21,7 +21,7 @@ deliberately a lightweight heuristic, not a parser. It reports drift but cannot 
 omitted claim should have appeared in a particular document; use stable, dataset-qualified aliases
 or generate documents from the evidence layer for that stronger contract.
 
-EVIDENCE.json shape (only the fields this tool needs; see evidence-manifest-schema):
+EVIDENCE.json shape (only the fields this tool needs):
     {
       "claims": [
         {
@@ -85,7 +85,7 @@ def _load_claims(evidence_path: Path) -> list[_Claim]:
     """Read EVIDENCE.json and return the scalar evidence rows (metric + authoritative value + anchors).
 
     The authoritative scalar is NESTED: each claim carries an `evidence[]` list, and each evidence
-    row holds the `metric` + `value` that documents must match (see evidence-manifest-schema). We
+    row holds the `metric` + `value` that documents must match. We
     iterate every claim's `evidence[]` and emit one `_Claim` per scalar evidence row. The anchor
     metric/aliases are taken from the evidence row, falling back to the parent claim for either
     field. Evidence rows without a numeric `value` (or whose metric is non-scalar) are skipped;

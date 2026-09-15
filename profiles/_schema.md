@@ -2,17 +2,15 @@
 
 Every `profiles/<platform>.md` describes ONE platform with the **same 8 sections in the same order**, so
 they are scannable and diffable. (One sanctioned exception: a *family* profile covering several near-clone
-platforms — e.g. `china.md` — may append a per-platform comparison section after §8; the 8 core sections
-stay fixed and in order.) A profile owns all the *slow-changing, per-platform* substrate that the
-SKILL.md phases delegate to. It does **not** describe a specific job (that's the portable job request,
+platforms — e.g. `china.md`, `generic-ssh.md` — may append `##` per-platform comparison or diff sections
+after §8; the 8 core sections stay fixed and in order.) A profile owns all the *slow-changing,
+per-platform* substrate that the run phases delegate to. It does **not** describe a specific job (that's the portable job request,
 below) and never repeats the universal gotchas (those live in `references/run-remote/gotchas_universal.md` — link,
 don't restate).
 
 Design rule borrowed from SkyPilot / dstack / Ray: **hardware is a CONSTRAINT, not a SKU.** A job asks
 for `gpu: A100:8`; the profile owns how that maps to this platform's instance types. **Secrets are
 referenced by env-var NAME or file path only — never inline a key**.
-
----
 
 ## Required structure of `profiles/<platform>.md`
 
@@ -22,9 +20,10 @@ sections.
 ```yaml
 ---
 platform: <name>            # e.g. runpod
-kind: ssh-rental            # ssh-rental | cloud-api | kubernetes | slurm
-meter_stop_verb: terminate  # the action that STOPS billing (stop | terminate | destroy | release | 关机 | manual)
-meter_stop_irreversible: true
+kind: ssh-rental            # ssh-rental | bare-ssh | cloud-api | kubernetes | slurm | workstation
+meter_stop_verb: terminate  # the action that STOPS billing (stop | terminate | destroy | release | 关机 |
+                            # manual); a family profile may say per-platform, an owned box n/a
+meter_stop_irreversible: true   # true | false | mixed (family profiles spanning both)
 detach_primitive: tmux      # tmux | sbatch | k8s-job | nohup | kaggle-commit
 spot_available: true
 spot_grace: ~5s             # SIGTERM→SIGKILL window, or n/a
@@ -70,7 +69,7 @@ The detach primitive (`tmux` / `sbatch` / Job manifest / commit), whether it sur
 (not just an SSH drop), and any native queue/scheduler. Note if `tmux` must be `apt install`-ed or is
 absent (use `nohup … </dev/null >log 2>&1 &`).
 
-### 7. TOP GOTCHAS  (4–8, platform-pinned)
+### 7. TOP GOTCHAS  (4–16, platform-pinned)
 Only the *platform-specific* ones, Symptom → Root cause → Fix. Universal gotchas are referenced, not
 repeated. Give each a stable local id (e.g. `RP1`, `VAST2`).
 
@@ -85,8 +84,6 @@ rather than being set per platform: `RUN_ONE` (the queue runner's path to `run_o
 set either explicitly only if your layout differs.
 
 Some profiles also surface connection facts like `SSH_USER` (e.g. Lambda's non-root `ubuntu`) or `SSH_HOST` — these are **informational** for that profile's own `ssh`/`scp` lines, **not** read by the `scripts/` templates.
-
----
 
 ## Portable job request (NOT in the profile — keep it per-run)
 

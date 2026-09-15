@@ -1,10 +1,10 @@
 ---
 platform: generic-ssh        # the DEFAULT profile; Slurm / K8s / Colab-Kaggle are thin diffs below
-kind: ssh                     # ssh | slurm | kubernetes | notebook (per sub-section)
+kind: bare-ssh                # bare-ssh | slurm | kubernetes | notebook (per sub-section)
 meter_stop_verb: manual       # nothing reclaims the box — a forgotten instance bills 24/7
 meter_stop_irreversible: true # destroying the box deletes its disk; no platform undo
 detach_primitive: tmux        # tmux/nohup (bare) | sbatch (Slurm) | k8s-job (K8s) | kaggle-commit
-spot_available: false         # bare box: none by default; Slurm scavenger + spot rentals override
+spot_available: host-dependent # bare box: none by default; Slurm scavenger + spot rentals override
 spot_grace: n/a               # bare: n/a · Slurm: SIGTERM→KillWait(default 30s)→SIGKILL · K8s: terminationGracePeriodSeconds(default 30s)
 shared_fs: host-dependent     # bare: one disk you own · Slurm: parallel /scratch · K8s: a PVC
 inode_cap: host-dependent     # measure with df -i; do NOT assume an AutoDL ~200K constant
@@ -25,18 +25,9 @@ Read this whole file before Phase 0 on any unbranded rental, then jump to the ma
 (Slurm / Kubernetes / Colab-Kaggle) if the backend is a scheduler, a cluster, or a notebook.
 **Universal gotchas are NOT restated here** — see `references/run-remote/gotchas_universal.md`.
 
-**Table of contents** (`grep -in '<keyword>' profiles/generic-ssh.md` to jump):
-- BASELINE: 8-section schema for the bare-SSH box (sections 1–8)
-- THIN DIFF — SLURM (sbatch replaces tmux)
-- THIN DIFF — KUBERNETES (a Job manifest replaces the shell)
-- THIN DIFF — COLAB / KAGGLE (not SSH-orchestratable)
-
 The one load-bearing abstraction every backend below solves differently: **detach the job from the
-connection, and make the result survive the session ending.** Checkpoint-to-durable + idempotent
-resume (principle #8) is the invariant; the detach primitive (tmux / sbatch / Job / commit) is the
-swappable plug.
-
----
+connection, and make the result survive the session ending** — checkpoint-to-durable + idempotent resume
+(principle #8) is the invariant, and the detach primitive (tmux / sbatch / Job / commit) the swappable plug.
 
 ## 1. LAUNCH
 
@@ -107,13 +98,11 @@ overnight idle instance is the most expensive single mistake on metered hardware
 
 - The meter-stopping action is **provider-manual** (a console "stop"/"destroy", a `terminate` API, or
   a phone call) — and on most bare rentals it is **irreversible** (deletes the disk).
-- "Verify custody, then stop" is a **mandatory final phase**, not an afterthought. Honor the
-  **teardown Iron Law**: no stop/destroy until canonical-remote bytes are restored into an independent
-  temporary consumer, match the exact roster/SHA-256, safely load, reproduce full-prediction metrics,
-  **AND** the user has approved the cost-affecting action.
-  "It looked done in the log" is not evidence (principle #3). If a separate
-  verification-before-completion skill is installed, invoke it; otherwise enforce this skill's
-  exact manifest + independent-consumer gate. Local `PULL_VERIFIED.json` applies only to a local delivery.
+- "Verify custody, then stop" is a **mandatory final phase**, not an afterthought: NO stop / destroy /
+  `terminate` until the teardown gate passes and the user has approved the cost-affecting action
+  (teardown gate: `references/run-remote/lifecycle_checklist.md` Phase 5). If a separate
+  verification-before-completion skill is installed, invoke it; otherwise enforce this skill's exact
+  manifest + independent-consumer gate. Local `PULL_VERIFIED.json` applies only to a local delivery.
 
 ## 6. DAEMON TOOL
 
@@ -138,12 +127,10 @@ overnight idle instance is the most expensive single mistake on metered hardware
   the network blips. → Root cause: the job is a child of the SSH shell; the drop sends SIGHUP.
   → Fix: launch inside `tmux` (or `nohup … & disown`) **before** the long run starts — not after it is
   already orphaned.
-- **GEN3 — `scp` restarts from zero on a reset; `rsync` does not.** Symptom: a 40 GB re-sync that
-  never finishes over a flaky link. → Root cause: `scp` has no resume. → Fix: `rsync -avz --partial`
-  for every code/data/result transfer; wrap bulk pulls in a `timeout`+resume loop (principle #7).
-- **GEN4 — CRLF breaks `.sh` on the Linux box.** Symptom: `bash: $'\r': command not found`, or a
-  shebang that "isn't found." → Root cause: a script authored on Windows carries CRLF line endings.
-  → Fix: `.gitattributes` with `*.sh text eol=lf`; on-box unblock `sed -i 's/\r$//' run.sh`.
+- **GEN3 — `scp` restarts from zero on a reset; `rsync` does not.** → U12 in
+  `references/run-remote/gotchas_universal.md`.
+- **GEN4 — CRLF breaks `.sh` on the Linux box.** → U26 in
+  `references/run-remote/gotchas_universal.md`.
 - **GEN5 — Heavy DL static-checked on the wrong machine.** Symptom: an OOM or a CUDA mismatch only
   reproduces on the box. → Root cause: static/import checks ran locally, the real compute is remote.
   → Fix: run the cheap CPU smoke locally (Phase 2), run the heavy DL **on the box**; for the
@@ -161,11 +148,8 @@ overnight idle instance is the most expensive single mistake on metered hardware
   contend for VRAM and SM time. → Fix: the operator *is* the scheduler — serialize with the
   `run_queue.sh` template, or pin each run to a distinct card with `CUDA_VISIBLE_DEVICES=<n>`; check
   `nvidia-smi` for an existing holder before every launch (zombie holders → U11).
-- **GEN8 — Watching a poll connection, not the run, declares a false death.** Symptom: the ssh-poll
-  drops and the run is pronounced dead, but the job finished fine and wrote `best.pth`. → Root cause: a
-  dropped *poll* connection ≠ the training dying; the two failure modes are conflated. → Fix: on any poll
-  drop, re-ssh and check ground truth directly (`pgrep -af train`, log tail, `best.pth` mtime) before
-  concluding anything (principle #3); robust short-connection poll template → U17.
+- **GEN8 — Watching a poll connection, not the run, declares a false death.** → U3 in
+  `references/run-remote/gotchas_universal.md` (robust short-connection poll template → U17).
 
 ### Platform-specific debugging (bare SSH)
 
@@ -196,9 +180,7 @@ HF_HOME=$HOME/proj/.hf  (redirect off the default ~/.cache so it lands on the da
 DETACH=tmux            (the swappable plug — replaced by sbatch / Job / commit in the diffs below)
 ```
 
----
-
-# THIN DIFF — SLURM  *(sbatch replaces tmux)*
+## THIN DIFF — SLURM  *(sbatch replaces tmux)*
 
 `kind: slurm` · meter = walltime/fairshare **quota, not dollars** · detach = `sbatch` · no teardown.
 
@@ -282,9 +264,7 @@ wrap `srun` *inside* an `sbatch` script for long runs.
 **Slurm OVERRIDES:** `DETACH=sbatch` · `DURABLE_DIR=/scratch/$USER/proj` (durable) + `DATA_DIR=$TMPDIR`
 (node-local, wiped) · `PROXY_HOOK=module load cuda` · teardown=`n/a (watch sacct + fairshare)`.
 
----
-
-# THIN DIFF — KUBERNETES  *(a Job manifest replaces the shell)*
+## THIN DIFF — KUBERNETES  *(a Job manifest replaces the shell)*
 
 `kind: kubernetes` · detach = a `Job` manifest (no shell) · persistence = a **PVC, non-optional**.
 
@@ -374,9 +354,7 @@ each failure creates a *new* pod, it does not restart the old one; verified kube
 never a file on disk and never baked into the image layer, so run_one's `[ -n "$CRED_FILE" ]` guard skips
 the file read and the env var passes through · teardown=`kubectl delete` **+** scale the node pool down.
 
----
-
-# THIN DIFF — COLAB / KAGGLE  *(not SSH-orchestratable)*
+## THIN DIFF — COLAB / KAGGLE  *(not SSH-orchestratable)*
 
 `kind: notebook` · **no SSH, no tmux, no persistent disk, no real job abstraction.** The generic
 core's central primitive ("detach + survive the session") cannot be satisfied directly — degrade to
@@ -388,8 +366,8 @@ the baseline — the work cannot be kept alive long enough.
   RAM, variables, models, and the local `/content` filesystem are **lost**. Limits are **dynamic and
   unpublished** — GPU type/availability and the exact ceilings "vary over time" and GPU is best-effort,
   can be denied or downgraded (verified research.google.com/colaboratory/faq.html 2026-06).
-- **Free tier requires the browser tab to STAY OPEN** — *(verified — corrects the draft's "anti-idle
-  tricks are unreliable" framing)*: **background execution is a Pro+ paid feature**; on free tier closing
+- **Free tier requires the browser tab to STAY OPEN**: **background execution is a Pro+ paid feature**;
+  on free tier closing
   the tab stops the runtime shortly after (verified github.com/googlecolab/colabtools#4151 + community
   reports 2026-06). So keep-alive hacks aren't merely *unreliable* — there is **no supported headless
   background run at all** on free Colab. Design for the disconnect, do not fight it.

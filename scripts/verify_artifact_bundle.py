@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -66,11 +65,15 @@ def inspect_checkpoint(path: Path, allow_numpy_metadata: bool) -> dict:
     if allow_numpy_metadata:
         try:
             import numpy as np
-            from numpy.core.multiarray import scalar as numpy_scalar
+            try:  # NumPy >= 2.0 moved the private module
+                from numpy._core.multiarray import scalar as numpy_scalar
+            except ImportError:
+                from numpy.core.multiarray import scalar as numpy_scalar
         except ImportError as exc:
             raise RuntimeError("NumPy is required for --allow-numpy-metadata") from exc
         safe_types = [numpy_scalar, np.dtype, type(np.dtype(np.float64))]
         safe_type_names = [
+            "numpy._core.multiarray.scalar",
             "numpy.core.multiarray.scalar",
             "numpy.dtype",
             type(np.dtype(np.float64)).__qualname__,

@@ -1,13 +1,8 @@
 # Operating Principles — the 10 invariants, expanded
 
-These are the *why* behind every phase and gotcha. They hold on any **metered, isolated, rented GPU**
-— AutoDL, RunPod, vast.ai, Lambda, Paperspace, a Chinese platform, a bare SSH box, Slurm, or K8s. Only
-the concrete paths/CLI change (those live in `profiles/<platform>.md`). Internalize these; the recipes
-follow. The one-line form is in `lifecycle_checklist.md`; this file carries the cross-platform nuance.
-
-To jump: `grep -n '^## ' references/run-remote/principles.md`.
-
----
+The *why* behind every phase and gotcha, holding on any **metered, isolated, rented GPU** — AutoDL,
+RunPod, vast.ai, Lambda, Paperspace, a Chinese platform, a bare SSH box, Slurm, or K8s — with only the
+concrete paths/CLI changing (those live in `profiles/<platform>.md`).
 
 ## 1. Minimize paid wall-clock
 
@@ -20,8 +15,6 @@ box overnight, a human-in-the-loop pause on a live instance — is money.
 *Universal.* Even on Slurm where the "meter" is walltime/fairshare quota rather than dollars, the same
 discipline applies: don't hold an allocation idle.
 
----
-
 ## 2. Cheap checks before expensive compute
 
 A CPU smoke (1–2 batches, logger disabled, tiny shapes) kills import errors, config drift, tensor-shape
@@ -31,8 +24,6 @@ only surface after an instance spins up.
 
 *Boundary:* this skill owns *when* to run the smoke (the pre-rent gate). The smoke's *content* — what to
 assert, how to shrink the problem — belongs to **`references/verifying/methodology.md`**. Don't duplicate it here.
-
----
 
 ## 3. Trust artifacts you loaded, not log lines that claim success
 
@@ -46,18 +37,13 @@ dies on context reset while the job runs on. Reconcile watchers against the job'
 artifacts (`tmux ls` / `squeue` / `pgrep`, output `mtime`, a load-test), tear a watcher down when you
 supersede its job, and match a watcher's lifetime to the wait's duration.
 
-> **Monitoring physics this rests on** (the 600 s cap and `run_in_background` are **Claude Code** harness
-> primitives — on another Agent-Skills host map them per `references/run-remote/monitoring_patterns.md` §7; the
-> hang-physics below are pure shell and hold everywhere): foreground Bash hard-caps at 600 s (a long
-> foreground wait is killed at 10 min); `run_in_background` has **no** cap and notifies on exit; a
-> never-*exiting* watcher never notifies; an unquoted `|` inside a poll regex splits into piped commands
-> and the first reads stdin → hangs forever. See `references/run-remote/monitoring_patterns.md`.
+> *Why a watcher lies:* a never-*exiting* watcher never notifies, and a foreground wait dies at the host's
+> turn cap — the physics, the safe poll template and the per-host primitive mapping are in
+> `references/run-remote/monitoring_patterns.md` §0–§1 and §7.
 
 *Universal — the load-bearing spine.* It is the platform instance of
 `superpowers:verification-before-completion`'s Iron Law ("no completion claim without fresh verification
 evidence"). Shared with `references/verifying/methodology.md`.
-
----
 
 ## 4. Know what survives stop vs destroy
 
@@ -76,35 +62,27 @@ you intend to use. The data you need most often lives on the *volatile* tier by 
 
 *Mixed:* the *rule* is universal; the *which-mount* value is a profile fact.
 
----
-
 ## 5. Storage fails on the dimension — and the location — you're not watching
 
-Disk dies on **inodes before bytes** (`df -h` shows 34% while `cp` fails "No space left" because `df -i`
-is at 100% — classic on a shared FS full of many-small-files eval output). The real space hog often
-lives where you didn't look — a **symlinked cache** (`~/.cache/huggingface` mapped onto the data disk)
-can outweigh the `runs/` you created. **Audit with `du` on the actual mount, not assumptions.** Clean by
-**value**: keep the tiny irreplaceable evidence (metric/eval JSONs), discard the large reproducible
-scratch (periodic checkpoints, unused model caches — one observed sweep left **179 GB** of superseded `latest.pt`/`epoch_*.pt` while the real evidence was **<200 MB** of JSON). Pre-compute the budget; monitor `df -i`, not just
-`df -h`.
+Disk dies on **inodes before bytes**, and the real space hog often lives where you didn't look — a
+**symlinked cache** can outweigh the `runs/` you created — so audit with `du` on the *actual* mount and
+clean by **value**: keep the tiny irreplaceable evidence (metric/eval JSONs), discard the large
+reproducible scratch (one observed sweep left **179 GB** of superseded `latest.pt`/`epoch_*.pt` while the
+real evidence was **<200 MB** of JSON). Symptoms, gates and the recovery ladder →
+`references/run-remote/gotchas_universal.md` **U6**, **U7**; many-small-files → **U25**.
 
 *Mixed:* the inode-cap *number* is a profile fact (AutoDL/China enforce ~200K; RunPod/vast/Lambda spec
 GB quotas with no documented inode cap). The "audit the real mount, clean by value" discipline is core.
-The general form of the many-small-files trap is **shard into tar** (WebDataset) — see
-`references/run-remote/gotchas_universal.md` U25.
-
----
 
 ## 6. Never mutate inputs under a live run
 
-A running job holds its scripts **in memory by byte-offset**. tmux keeps `run_queue.sh` as-loaded; bash
-reads a script by seeking to a saved offset, so `scp`-ing a new version mid-run makes bash land in the
-middle of a *different* file and re-execute blocks (duplicate runs, stalled queues). Version filenames;
-edit only when nothing is reading them (`pgrep -af <script>` empty).
+A running job holds its scripts **in memory by byte-offset**, so replacing one mid-run makes bash land in
+the middle of a *different* file and re-execute blocks (duplicate runs, stalled queues). Version filenames;
+edit only when nothing is reading them (`pgrep -af <script>` empty). Mechanics →
+`references/run-remote/gotchas_universal.md` **U2**; the parallel-ablation form →
+`references/run-remote/parallel_ablation.md`.
 
 *Universal — pure bash/tmux physics.* Identical across every SSH backend.
-
----
 
 ## 7. Design for retry — failure is probabilistic, transfers are flaky, mirrors are route-specific
 
@@ -123,8 +101,6 @@ transfer uses (a no-proxy probe of a proxied transfer measures nothing).
 Lambda/Paperspace/China the interruption is auto-shutdown/auto-release/capacity instead) — see principle
 #8 and `references/run-remote/spot-resilience.md`.
 
----
-
 ## 8. Checkpoint-to-durable + idempotent resume is the universal spine
 
 Detaching the job is necessary but not sufficient. The **one** mechanism that survives every failure
@@ -140,12 +116,10 @@ The **detach primitive is the swappable plug** — tmux on a bare box, `sbatch -
 manifest on K8s, a Save&Run commit on Kaggle, a checkpoint-to-Drive loop on Colab. Checkpoint+resume is
 the invariant underneath all of them.
 
-*Universal.* Cadence is a formula, not a guess — Young/Daly `W = √(2·μ·C)` (μ = mean time between
-preemptions, C = checkpoint write time); round *down* to an iteration boundary. Managed frameworks
-(SkyPilot Managed Jobs, SageMaker) move the box for you but **restart your process from scratch — your
-checkpoint-load is what restores progress.** Details + worked numbers in `references/run-remote/spot-resilience.md`.
-
----
+*Universal.* Cadence is a formula, not a guess (Young/Daly), and managed frameworks (SkyPilot Managed
+Jobs, SageMaker) move the box for you but **restart your process from scratch — your checkpoint-load is
+what restores progress.** Formula, rounding rule and worked numbers →
+`references/run-remote/spot-resilience.md` §2.
 
 ## 9. Cost and destructive actions are the user's call
 
@@ -155,15 +129,11 @@ needed) rather than silently shrinking the experiment (fewer seeds, smaller eval
 
 This is sharpened, not softened, by going multi-platform: on RunPod/vast/Lambda the meter-stopping action
 is the **irreversible** `terminate`/`destroy` that deletes the disk — so the confirmation gate matters
-*more*. Operationalize it as the **teardown Iron Law** (lifecycle_checklist.md:117, Phase 5): no teardown
-before the canonical remote is restored/read back into an independent temporary consumer, every byte/hash
-matches, the checkpoint safely loads, full-prediction metrics recompute, and the user approves the specific
-cost-affecting action. That consumer may be remote; Mac residency is not required.
+*more*. Operationalize it as the teardown gate in `references/run-remote/lifecycle_checklist.md` Phase 5,
+whose verification consumer may be remote; local residency is not required.
 
 *Universal.* A shared FS is also multi-project: work inside your project's own folder, delete only your
 own redundancy, never a top-level dir you didn't create.
-
----
 
 ## 10. Teach the user the platform, don't just drive it
 

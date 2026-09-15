@@ -1,24 +1,9 @@
 # Monitoring Patterns — durable watching of a remote GPU job
 
-Platform-agnostic recipes for a long-running detached job on a rented box. The key distinction is between
-**remote correctness**, **watcher durability**, **model notification**, and **recovery** (§3). A session-bound
-watcher or UI task chip proves none of the others. Every recipe uses portable primitives — `tmux` OR `squeue`
-OR `pgrep`, a marker OR artifact `mtime` — with concrete paths bound by `profiles/<platform>.md`.
-
-To jump: `grep -in '<keyword>' references/run-remote/monitoring_patterns.md`.
-
-## Table of contents
-
-- §0 Monitoring physics — the four facts every recipe rests on
-- §1 The robust short-connection ssh-poll template (the safe poll primitive)
-- §2 Quick health probes (one round-trip each)
-- §3 Monitoring architecture — four separate responsibilities (L1 self-completion · L2 durable watcher · L3 model wake adapter · L4 recovery capsule)
-- §4 Stale-waiter hygiene — one waiter per live run, right lifetime
-- §5 Two-leg self-completion — guaranteed results + best-effort cadence
-- §6 Failure triage on the log
-- §7 Monitoring across agent hosts — per-host background/loop/cron primitives + the 2 portability rules (Claude Code · Codex · Cursor · Trae · generic)
-
----
+Platform-agnostic recipes for a long-running detached job on a rented box, built on the separation of
+**remote correctness**, **watcher durability**, **model notification** and **recovery** (§3) — a session-bound
+watcher or UI task chip proves none of the others — using portable primitives (`tmux` OR `squeue` OR `pgrep`,
+a marker OR artifact `mtime`) with concrete paths bound by `profiles/<platform>.md`.
 
 ## §0 Monitoring physics — the four facts every recipe rests on
 
@@ -28,8 +13,9 @@ Verified in-session, not assumed. The whole architecture is engineered around th
 > and notification behavior has been verified on the active host. Product names are not durability evidence.
 > Map the responsibilities below to actual primitives; do not assume another agent host's behavior.
 
-1. **Foreground Bash hard-caps at 600 s (10 min).** A long foreground wait/monitor is *killed* at the cap
-   — so never foreground-poll a multi-hour run.
+1. **A foreground command is capped by the host's turn limit** (Claude Code: Bash hard-caps at 600 s /
+   10 min; see §7 for other hosts). A long foreground wait/monitor is *killed* at the cap — so never
+   foreground-poll a multi-hour run.
 2. **A session background task may outlive a turn but may not outlive restart, compaction, or provider loss.**
    It is useful for bounded waiting only while its host lifecycle remains alive.
 3. **A never-*exiting* watcher never notifies.** No exit event = no notification, ever. A persistent
@@ -44,8 +30,6 @@ Corollary — **trust the artifact, not the silence.** When a job "looks done," 
 re-check ground truth (`grep DONE log; tmux ls / squeue; nvidia-smi`) before claiming success. Do not
 wait blindly for a notification that may never fire. This is the `references/verifying/methodology.md` (REQUIRED)
 Iron Law applied to monitoring.
-
----
 
 ## §1 The robust short-connection ssh-poll template (the safe poll primitive)
 
@@ -91,17 +75,13 @@ Run this through a verified watcher primitive or as a single foreground tick und
 the only available runner is session-bound, disclose that limitation and rely on L1 remote self-completion plus
 L4 recovery. **Never foreground-poll the full wait.**
 
----
-
 ## §2 Quick health probes (one round-trip each)
 
 Each is a single short ssh. Combine several into ONE round-trip for a patrol tick (§3). Detach-primitive
 and paths come from the profile; the structure is identical everywhere.
 
-> A blank live **TensorBoard tile / web panel** while these probes show a healthy run is **not** a dead
-> run — it is `references/run-remote/gotchas_universal.md` **U39**: the panel reads a fixed logdir/port your logger
-> didn't write to, or the TB/watcher process died (ran foreground, not under the detach primitive), or the
-> port isn't exposed. Fix per the platform profile; never restart a healthy run over an empty panel.
+> A blank live **TensorBoard tile / web panel** while these probes show a healthy run is **not** a dead run
+> (→ `references/run-remote/gotchas_universal.md` **U39**); never restart a healthy run over an empty panel.
 
 **Is the job alive? (tmux OR squeue OR pgrep — pick the profile's primitive)**
 ```bash
@@ -134,8 +114,6 @@ many-small-files eval output (→ `references/run-remote/gotchas_universal.md`):
 ```bash
 ssh "$HOST" "df -h '$DATA_MOUNT'; df -i '$DATA_MOUNT'"
 ```
-
----
 
 ## §3 Monitoring architecture — four separate responsibilities
 
@@ -171,26 +149,25 @@ nohup bash -c '
 
 > ⚠️ **Gotcha — never gate on a string the PAYLOAD prints; gate on an artifact, or on a marker YOUR
 > wrapper writes.** The `until grep -q "Training completed" train.log` above is convenient but it trusts
-> the trainee to emit its own last line. **Measured failure (2026-07-22, cost ≈12 h × 2 boxes):** two runs
-> completed all 100 epochs and wrote 442 MB `best.pth` + `metrics.json` + tfevents, yet **exited without
-> ever emitting that final line** (one died at teardown, one hung in DataLoader-worker join with the GPU
-> idle). The gate string could never arrive, so the downstream queue waited forever — and the crash-scan
-> stayed quiet because it greps `Traceback|OOM|Killed` and **a stall is not a crash: it leaves no
-> signature at all.**
+> the trainee to emit its own last line. A payload can complete every epoch, write `best.pth` +
+> `metrics.json`, and still **exit without ever emitting that final line** (death at teardown, a
+> DataLoader-worker join hang with the GPU idle). The gate string then never arrives, so the downstream
+> queue waits forever — and the crash-scan stays quiet, because it greps `Traceback|OOM|Killed` and
+> **a stall is not a crash: it leaves no signature at all.**
 > - **Gate on what the work produces** (`best.pth`, a result JSON) **or on a marker your own `&&`-chain
 >   touches after the command returns.** Both are under your control; the payload's stdout is not.
 > - **Bound every wait**: `until [ -f "$ART" ] || [ $waited -ge $MAX ]` … then proceed-and-warn. An
 >   unbounded `until` turns one bad assumption into indefinite idle billing.
-> - **Gate predicate and alarm predicate must be INDEPENDENT.** In that incident the runner's gate and the
->   watcher's completion test were the *same* `grep "Training finished"` — one wrong assumption took out
+> - **Gate predicate and alarm predicate must be INDEPENDENT.** If the runner's gate and the watcher's
+>   completion test are the *same* `grep`, one wrong assumption takes out
 >   the work **and** its alarm together. Gate on the artifact; alarm on **liveness** (L2: newest-log mtime
 >   age, GPU util, trainer-process count). **If your watcher would print nothing while the box sits
 >   silent-but-alive, it is not a monitor.**
 
 > ⚠️ **Root cause behind both halves — a log is append-only history; it cannot answer "what is true
-> NOW".** Two failures one hour apart, same disease, opposite symptoms:
-> - waited on a string that **never arrives** (payload exited without printing its last line) → infinite wait;
-> - decided "finished" from `grep -c "QUEUE COMPLETE"` over the **cumulative** runner log → once a queue
+> NOW".** Same disease, opposite symptoms:
+> - waiting on a string that **never arrives** (payload exited without printing its last line) → infinite wait;
+> - deciding "finished" from `grep -c "QUEUE COMPLETE"` over the **cumulative** runner log → once a queue
 >   completed, that marker lives forever, so the same box **given fresh work still reads as done** and
 >   silently drops out of monitoring.
 >
@@ -204,12 +181,9 @@ nohup bash -c '
 
 ### L2 — durable watcher (liveness)
 
-> **This machine already has the L2 machine-liveness layer built (2026-08-20):** launchd job
-> `com.example.remote-watch` runs `~/.claude/scripts/remote_watch.sh` every 10 min against
-> `~/.claude/remote-watch.json` (per-target heartbeat path + max age; stale/unreachable → macOS
-> notification + `~/.claude/remote-watch-alerts.log`). **Adding a run's box = editing that JSON**,
-> not building a watcher. This layer answers "is the box alive"; the per-run patrol tick below
-> still answers "is the RUN healthy".
+> If the host already runs an OS-owned liveness watcher (a scheduler job that probes each target's
+> heartbeat file and alerts when it goes stale), register the run's box there instead of building a second
+> watcher; it answers "is the box alive", the per-run patrol tick below answers "is the RUN healthy".
 
 Use an on-box service/cron, a local OS scheduler, or a product-native monitor only after verifying ownership,
 restart behavior, cancellation, and secret boundaries. Creating OS persistence requires explicit authority. If
@@ -257,20 +231,17 @@ Persistent notes a brand-new session inherits from one word ("继续"): exact re
 definition, every marker path, the "first command on reconnect." Two durable hardenings:
 - **Externalize transfer/monitor state to a stable OS path** + a DONE marker file *outside* the session
   dir, so any future session resumes by reading files instead of re-uploading.
-- **True restart-immunity means an OS-owned process** — on this machine it exists (the launchd
-  watcher above, user-approved 2026-08-20): registering a target is a JSON edit, no new authority
-  needed. Building a NEW os-level watcher elsewhere still needs the user's explicit approval first.
+- **True restart-immunity means an OS-owned process.** Where the host already owns one (the L2 liveness
+  watcher above), registering a target is a config edit and needs no new authority; building a NEW
+  OS-level watcher does need the user's explicit approval first.
 
 > **Gotcha — after a context compaction, reconcile UI task chips against the OS process table.**
-> Symptom: 5 chips show "Running" for 2–6 h while zero ssh/scp processes exist and a "running" upload
-> actually died at 2/10 checkpoints, silently gating the downstream eval all evening. → Root cause:
-> background shells die with the old session, but their chips keep showing "Running"; the new session's
-> task list is empty, so the only ground truth is a process scan. → Fix: **first action after any
-> compaction is a process-scan** (e.g. `Get-CimInstance Win32_Process` matched on the remote host string,
-> or `pgrep`/`ps` for ssh/scp), relaunch dead transfers with a byte-size verify, re-arm ONE fresh
-> sentinel, and tell the user to clear the husks.
-
----
+> Symptom: chips show "Running" for hours while zero ssh/scp processes exist and a "running" upload
+> actually died partway, silently gating the downstream eval. → Root cause: background shells die with the
+> old session, but their chips keep showing "Running"; the new session's task list is empty, so the only
+> ground truth is a process scan. → Fix: **first action after any compaction is a process-scan**
+> (`pgrep`/`ps` for ssh/scp, matched on the remote host string), relaunch dead transfers with a byte-size
+> verify, re-arm ONE fresh sentinel, and tell the user to clear the husks.
 
 ## §4 Stale-waiter hygiene — one waiter per live run, right lifetime
 
@@ -290,8 +261,6 @@ definition, every marker path, the "first command on reconnect." Two durable har
   idle-SSH timeout while the detached training runs on independently. Re-ssh and verify the process/
   artifacts directly before concluding anything died.
 
----
-
 ## §5 Two-leg self-completion — guaranteed results + best-effort visibility
 
 "I'll check periodically" is a lie unless a trigger is ARMED — between turns the assistant does not run.
@@ -310,10 +279,8 @@ Two legs, never conflated:
 > the box. Don't promise autonomous cross-session polling that can't be delivered.
 
 For a hosted tracker whose metrics survive teardown and can be polled as a structured monitor instead of
-brittle ssh-tail, use `huggingface-skills:huggingface-trackio` if that plugin is installed (it is NOT on this machine) — poll its alerts
-rather than grepping a remote log.
-
----
+brittle ssh-tail, use `huggingface-skills:huggingface-trackio` if that plugin is installed — poll its alerts rather than
+grepping a remote log.
 
 ## §6 Failure triage on the log
 
@@ -340,11 +307,6 @@ ssh "$HOST" "grep -B2 -A20 'Traceback' '$RUN_LOG' | head -50"
   in `/sys/fs/cgroup/memory.events`).
 - GPU SM% pinned low while a python thread-storm pegs the cores → **intra-op thread oversubscription** on a
   vCPU slice (`references/run-remote/gotchas_universal.md` U40; cap `OMP_NUM_THREADS` to the cgroup quota).
-
-Universal gotchas (silent sync, CRLF, mid-run script overwrite, inode caps) are NOT restated here —
-see `references/run-remote/gotchas_universal.md` (`grep -in '<keyword>' references/run-remote/gotchas_universal.md` to jump).
-
----
 
 ## §7 Monitoring across agent hosts
 

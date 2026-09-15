@@ -1,24 +1,10 @@
 # Spot / Preemption Resilience
 
-Make a job survive being killed at a random instant — the price of riding the 50–90 %-cheaper
-spot/preemptible/interruptible tier. The whole layer reduces to **principle #8**
-(`references/run-remote/principles.md`): checkpoint full state to durable storage on a Young/Daly timer, load-latest
-unconditionally on startup, write atomically, treat the preemption signal only as an opportunistic
-last-flush. This file is the deep form: per-platform grace windows, the cadence formula with a worked
-number, the atomic-write resume recipe, and a commented Python skeleton.
-
-To jump: `grep -in '<keyword>' references/run-remote/spot-resilience.md` — keywords: `grace`, `signal`, `young`,
-`daly`, `cadence`, `atomic`, `rename`, `resume`, `skeleton`, `managed`, `skypilot`, `sagemaker`, `slurm`.
-
-## Table of contents
-
-1. [Preemption signals + grace windows (per platform)](#1-preemption-signals--grace-windows-per-platform)
-2. [Checkpoint cadence — the Young/Daly formula](#2-checkpoint-cadence--the-youngdaly-formula)
-3. [The atomic-write resume recipe](#3-the-atomic-write-resume-recipe)
-4. [Managed-spot frameworks move the box; the checkpoint-load restores the state](#4-managed-spot-frameworks-move-the-box-the-checkpoint-load-restores-the-state)
-5. [Python checkpoint/resume skeleton](#5-python-checkpointresume-skeleton)
-
----
+The deep form of **principle #8** (`references/run-remote/principles.md`) for the 50–90 %-cheaper
+spot/preemptible/interruptible tier — per-platform grace windows, the cadence formula with a worked number,
+the atomic-write resume recipe and a commented Python skeleton — all of it serving one rule: checkpoint full
+state to durable storage on a Young/Daly timer, load latest unconditionally on startup, write atomically, and
+treat the preemption signal only as an opportunistic last flush.
 
 ## 1. Preemption signals + grace windows (per platform)
 
@@ -59,8 +45,6 @@ Symptom: a multi-day run on a Preemptible VM stops dead at 24 h even though noth
 Root cause: legacy Preemptible has a hard 24 h max runtime; Spot VMs have no cap.
 Fix: use **Spot, not Preemptible** for anything past a day (prefer Spot over legacy Preemptible for any run past a day).
 
----
-
 ## 2. Checkpoint cadence — the Young/Daly formula
 
 Cadence is a **formula, not a guess.** The optimal checkpoint interval that minimizes total wasted
@@ -95,8 +79,6 @@ back), so distributed jobs should checkpoint *more* frequently than the single-G
 URLs: Young/Daly [robustness paper, INRIA](https://people.bordeaux.inria.fr/gaupy/ressources/pub/confs/icpp20_robustness.pdf),
 [Optimal Checkpointing Period, LAWN 281](https://www.netlib.org/lapack/lawnspdf/lawn281.pdf),
 [Optimal Checkpointing for Iterative Applications, IEEE](https://ieeexplore.ieee.org/document/9495174/).
-
----
 
 ## 3. The atomic-write resume recipe
 
@@ -136,8 +118,6 @@ URLs: [Check-N-Run, arXiv](https://arxiv.org/pdf/2010.08679),
 [SkyPilot training-guide](https://docs.skypilot.co/en/latest/reference/training-guide.html),
 [SageMaker resume-from-checkpoint](https://docs.aws.amazon.com/sagemaker/latest/dg/model-checkpoints-resume.html).
 
----
-
 ## 4. Managed-spot frameworks move the box; the checkpoint-load restores the state
 
 Managed frameworks **auto-provision a replacement** on preemption — but they restart the **process from
@@ -160,8 +140,6 @@ return here to make the *code* resume-correct so their recovery actually lands o
 a log line). For the elastic / multi-node tier (torchrun `--max-restarts`, Elastic Horovod) see
 `references/run-remote/multinode.md`; the same invariant holds — the framework restarts processes, the per-epoch
 snapshot restores state.
-
----
 
 ## 5. Python checkpoint/resume skeleton
 

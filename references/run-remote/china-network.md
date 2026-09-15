@@ -1,27 +1,11 @@
 # China network + model-download reference
 
-Universal recipe for pulling code, packages, and model weights onto **any GPU box behind the GFW** —
-AutoDL, 矩池云, 恒源云, Featurize, 揽睿星舟, or a bare CN SSH instance. The whole problem reduces to **four
-orthogonal env-var switches** (mirror, cache location, resume tier, proxy scope); none requires editing
-training code. This file owns the CN-specific transport swap and stall-retry. If
-`huggingface-skills:hf-cli` is installed, use it for the generic `hf download` / `hf upload` verbs;
-otherwise run the equivalent `hf` CLI commands shown here directly.
-
-Universal gotchas (inode caps, silent sync, symlinked caches) are **not** restated here — see
-`references/run-remote/gotchas_universal.md`. The AutoDL-pinned form lives in `profiles/autodl.md`.
-
-To jump: `grep -in '<keyword>' references/run-remote/china-network.md` (try `mirror`, `HF_ENDPOINT`, `hfd`,
-`no_proxy`, `hf_transfer`, `decision`).
-
-## Table of contents
-
-1. Mirrors table — PyPI / conda / HuggingFace / alt hub
-2. Env switchboard — the four switches + the import-time trap + cache redirect
-3. Resumable-download ladder — three tiers + the `hf_transfer` caution
-4. The `no_proxy` trap — a proxy that fixes one domain breaks all the others
-5. Decision rule + `scripts/setup-china-mirrors.sh`
-
----
+Universal recipe for pulling code, packages, and model weights onto **any GPU box behind the GFW** (AutoDL,
+矩池云, 恒源云, Featurize, 揽睿星舟, or a bare CN SSH instance): the problem reduces to **four orthogonal
+env-var switches** — mirror, cache location, resume tier, proxy scope — none of which requires editing
+training code, with the CN-specific transport swap and stall-retry owned here, the AutoDL-pinned values in
+`profiles/autodl.md`, and the generic `hf download` / `hf upload` verbs taken from
+`huggingface-skills:hf-cli` when that skill is installed and run as plain `hf` CLI commands otherwise.
 
 ## 1. Mirrors table
 
@@ -43,8 +27,6 @@ proxy if the box is offline), and mirror just the stable channels.
 Source: HF-Mirror `https://hf-mirror.com/`; TUNA PyPI `https://mirrors.tuna.tsinghua.edu.cn/help/pypi/`;
 TUNA Anaconda `https://mirrors.tuna.tsinghua.edu.cn/help/anaconda/`; ModelScope client
 `https://github.com/modelscope/modelscope_hub`.
-
----
 
 ## 2. Env switchboard + the import-time trap
 
@@ -82,8 +64,6 @@ disk-budget discipline as checkpoints (principle #5; survival matrix in each pro
 
 Source: HF-Mirror `https://hf-mirror.com/`; ModelScope client
 `https://github.com/modelscope/modelscope_hub`.
-
----
 
 ## 3. Resumable-download ladder
 
@@ -139,8 +119,6 @@ Source: hf CLI resume `https://github.com/huggingface/huggingface_hub/issues/358
 `https://github.com/huggingface/hf_transfer/issues/30`; ModelScope download
 `https://deepwiki.com/modelscope/modelscope/3.1-model-download-and-caching`.
 
----
-
 ## 4. The `no_proxy` trap
 
 **The highest-value gotcha in this file.** A Clash / VPN proxy added to reach `huggingface.co`
@@ -180,8 +158,6 @@ Source: requests `no_proxy` `https://github.com/psf/requests/issues/4871`; no_pr
 `https://www.browserstack.com/guide/no_proxy-environment-variable`; Clash pip ProxyError
 `https://github.com/clash-verge-rev/clash-verge-rev/issues/2607`.
 
----
-
 ## 5. Decision rule + delivery
 
 **Pick the cheapest route that reaches the weights, in order:**
@@ -202,7 +178,7 @@ everything else. Mirror → alt hub → multi-connection → proxy, in that orde
 first connect. It bakes §1 (PyPI + conda mirrors), §2 (the four env switches + cache redirect off the
 system disk), and the §3 default (`HF_HUB_ENABLE_HF_TRANSFER=0`) into one idempotent step, leaving the §4
 proxy block commented out (added only on the rare proxy branch). Author it with `#!/usr/bin/env bash` +
-`set -u`, forward-slash paths, and **no unquoted `|` inside any `grep`** (an unquoted pipe in a regex reads
-stdin and hangs the setup forever).
+`set -u`, forward-slash paths, and **no unquoted `|` inside any `grep`** (see
+`references/run-remote/monitoring_patterns.md` §0, fact 4).
 
 Source: HF-Mirror `https://hf-mirror.com/`; ModelScope `https://github.com/modelscope/modelscope_hub`.

@@ -1,6 +1,6 @@
 # VERIFY methodology — is the number real?
 
-> **Stance — 用户主权 + 审查→披露.** Research judgment (seed count, which samples to show, whether an aux
+> **Stance — user sovereignty; audit → disclose.** Research judgment (seed count, which samples to show, whether an aux
 > branch exists) belongs to the user. This methodology **audits and discloses tradeoffs ONCE**, then moves
 > on — it never mandates a practice or nags. If the user has declared single-seed, state the limitation
 > once and stop; don't keep pushing multi-seed. What is enforced is **disclosure, not the fix**: an
@@ -9,7 +9,7 @@
 
 ## Overview
 
-**A surprising experiment number is a hypothesis, not a fact to report.** It is one of three things — an instrumentation/config **bug**, a genuine **effect**, or stochastic **noise** — and you decide which *before* you trust it or discard it. Platform-agnostic methodology; for GPU-rental operations see `references/run-remote/`.
+**A surprising experiment number is a hypothesis, not a fact to report.** It is one of three things — an instrumentation/config **bug**, a genuine **effect**, or stochastic **noise** — and you decide which *before* you trust it or discard it.
 
 ## Universal principles (the 6 invariants that generate every probe below)
 
@@ -38,8 +38,6 @@ Two operating invariants throughout: **never mutate the original artifacts while
 - Results match expectation (nothing to verify)
 - Platform/infra faults (disk, SSH, shared FS) → `references/run-remote/` (rented) or `references/run-local/` (own box)
 - A model that won't run / converge / fit → the `references/training/` debug layer; pure architecture *design* is out of scope
-
----
 
 ## 1. Classify a surprising result (the core loop) — principle 1+2
 
@@ -87,11 +85,9 @@ Three silent comparability-killers:
 2. **Editing a script/config a long job is still reading** — runtimes may re-read mid-execution and misbehave. Change inputs only *between* runs.
 3. **Giving one condition special settings** — breaks the apples-to-apples comparison. Hold every condition identical.
 
----
-
 ## 4. Leakage — test information reaching training *or selection* (principle 3)
 
-Leakage hides from code review and shows up in the artifacts; **probe the PREPARED data + the pipeline ORDER**, not the prep code. The flagship case: two reviews missed a case-insensitive-filesystem double-ingestion (NTFS/APFS: enumerating `("Train","train")` aliases ONE physical dir → every image ingested twice; a pooled random re-split then scatters the copies across train/test = true leakage — **76 % of one test split had been trained on**; the paper number survived until an artifact probe killed it). The variants, each with its cheap probe:
+Leakage hides from code review and shows up in the artifacts; **probe the PREPARED data + the pipeline ORDER**, not the prep code. The flagship case: a case-insensitive-filesystem double-ingestion (NTFS/APFS: enumerating `("Train","train")` aliases ONE physical dir → every image ingested twice; a pooled random re-split then scatters the copies across train/test = true leakage — **76 % of one test split had been trained on**; the paper number survived until an artifact probe killed it). The variants, each with its cheap probe:
 
 | Leakage variant | Cheap probe |
 |---|---|
@@ -131,6 +127,8 @@ A smoke that asserts only `isfinite(loss)` + output shape passes on code that is
 - **An identity / trivial shortcut.** An autoencoder that copies input→output, or a model exploiting a degenerate solution the loss happens to reward, scores well while learning nothing — perturb the input and confirm the output actually follows.
 - **Delegated smokes prove even less.** A subagent reporting "smoke passed, loss finite" verified neither scale nor math. The controller **re-verifies independently** — read the load-bearing code path and check the numbers, not the exit status.
 
+Smoke-length runs hide several distinct failures — undertraining vs a loss-math bug vs a degenerate model, the generative loss-vs-sample gap, decode scale, local OOM, a stale loaded artifact → `references/verifying/smoke-hidden-failures.md`.
+
 ## 7. Localize where the signal dies before theorizing (principle 5)
 
 An end-to-end failure (downstream task at chance) has many candidate causes; **don't reach for the hardest explanation ("the task is too hard") until a cheap probe ladder shows where the signal actually dies.**
@@ -149,15 +147,13 @@ An end-to-end failure (downstream task at chance) has many candidate causes; **d
 
 ## 8. Representation collapse: a model that ignores its input (principle 5)
 
-A net mapping a low-level input to a structured output whose output is near-identical across *distinct* inputs is **ignoring its input**, not learning slowly. Fastest fingerprint: **output cross-sample cosine ≈ 1.0** (or `real == shuffle` in a conditioning control). The decisive, counterintuitive lessons:
-
-- **Diagnose at the INPUT, render the intermediate.** Check **input** cross-sample cosine; ≈1.0 ⇒ inputs are invariant-dominated (a DC/low-freq offset swamps a tiny discriminative residual). Then *render* the artifact (load the small front module on CPU) and LOOK — proxies lie in both directions (a low recon loss AND a climbing cosine both misled while the image settled it in seconds).
-- **Fix at the INPUT, not the OUTPUT.** Normalize the network input — per-feature **standardization** (z-score, train stats in saved buffers) or per-sample LayerNorm. (Term precision: *standardization* — per-feature zero-mean/unit-variance, no decorrelation — **not** *whitening*/ZCA, rarely needed here.) A de-collapse head on the *output* only amplifies the collapsed residual to satisfy its own loss. A physics/`[0,1]` preprocessing scalar is **not** input normalization.
-- **An architecture-invariant failure is a data/input bug — stop redesigning.** When the SAME signature (collapse / `real==shuffle` / chance floor) survives *every* architecture change (frozen vs LoRA, encoder A vs B, with/without aux head), the cause is upstream. Freeze the architecture and **diff the INPUT against a working sibling**.
-- **Train-ok / val-collapsed ⇒ per-split input-distribution mismatch**, not the model. Dump per-split input stats (sampling rate, per-feature std, cross-sample cosine). A *per-sample* input norm survives this; a norm baking in *train* dataset statistics does not.
-- **Kill a collapsing run in epoch 1.** Cosine pinned near 1.0 + predictions piling on one class ⇒ it will not recover; early-stop instead of paying for a multi-hour run to a foregone `real==shuffle`.
-
-**Deep playbook with the full worked diagnosis → `references/verifying/representation-collapse.md`.**
+Output near-identical across *distinct* inputs (cross-sample cosine ≈ 1.0, or `real == shuffle` in a
+conditioning control) means the net is **ignoring its input**, not learning slowly. Diagnose at the **input**
+(input cross-sample cosine ≈ 1.0 ⇒ an invariant offset swamps the discriminative residual) and *render* the
+intermediate; fix at the input with per-feature standardization or per-sample LayerNorm, never with an output
+de-collapse head; a signature that survives every architecture change is an input/data bug; train-ok /
+val-collapsed is a per-split input mismatch; kill a collapsing run in epoch 1. Full worked diagnosis →
+`references/verifying/representation-collapse.md`.
 
 ## 9. Metric & statistical integrity (principle 5)
 
@@ -242,8 +238,6 @@ One result lives in many places — paper, thesis, slides, rebuttal, README, res
 
 This is principle 4 (trust the artifact, not a document's copy of it) and principle 6 (a number you cannot re-derive is not a result) applied across the whole corpus.
 
----
-
 ## Academic-integrity spectrum (where the probes above also bite)
 
 The same probes that catch honest bugs also expose and deter the rest of the spectrum:
@@ -252,71 +246,15 @@ The same probes that catch honest bugs also expose and deter the rest of the spe
 
 This skill mainly catches **bugs + negligence**, but **test-set tuning (§4), unfair comparison (§5), hidden seeds / no-variance (§9), a one-off-CLI ghost number (§11), and a truncated-axis or hidden-failure plot (§10)** are exactly the QRP/FFP tells. Operating rule for anything integrity-relevant: **disclose it, or don't claim it.** HARKing (presenting a post-hoc finding as a priori) and file-drawering failed seeds are QRPs even when every number is real. Figure duplication/splicing → §10 visual check; citation/attribution integrity → `citation-hygiene`.
 
----
-
-## Common mistakes
-
-| Mistake | Fix |
-|---|---|
-| Report a surprising metric without a control-diff | diff first; only the ablated variable should change |
-| Judge by the endpoint metric alone | read the trajectory |
-| Re-run into the original artifact path | back it up first |
-| Special hyperparameters to "fix" one condition | keep all conditions identical; retry same config |
-| Declare splits leakage-free from reading the prep code | probe the PREPARED artifacts: dup normcase names, cross-split intersections, same-bytes hash, fit-on-train-only, group/time/label/pretrain leakage (§4) |
-| Read cross-split name collisions as leakage (or as proof of it) | names are not bytes — hash the colliders; official splits can share numbering with zero shared images |
-| Tune HP / pick epoch / pick checkpoint on the test split | that is selection-on-test leakage; select on val, touch test once |
-| Compare a fully-tuned method to an under-trained baseline | equal budget/epochs/data/aug + matched params·FLOPs; reach the baseline's published number or mark cite-only (§5) |
-| Copy baseline numbers from a different setting/split | re-run under one protocol or label the difference |
-| A green smoke ⇒ a correct model | `isfinite(loss)` survives scale/gradient bugs — assert train≡eval input (`allclose`) + gradient flow (64/64) + `model.eval()` |
-| Metric computed in normalized/z-space or wrong image-norm/channel order | de-normalize before scoring; one shared transform; check ImageNet-vs-[0,1], RGB/BGR |
-| Report a single (or best) seed as a stable method improvement | disclose both arms and sample-size rationale; effect interval/test must match independent units, pairs and seed hierarchy (§9) |
-| Compare a single-seed probe against a single seed of a multi-seed baseline | report it against the baseline's distribution (vs mean / best / worst) and name the draw — the pick drifts toward the flattering one (§9) |
-| Run the sweep, then discover it lacks useful precision/power | plan MDE using alpha, target power, variance and design; unresolved precision is not proof of zero effect (§9) |
-| Cherry-pick the favorable metric variant | report the field's standard panel (mIoU+PA, AP@[.5:.95], LPIPS) |
-| "The task is too hard" before a probe ladder | probe the raw-input ceiling + each stage (held-out); retry on a strong-signal easy task |
-| Tune against a metric at its chance floor (`ln B` / `1/B`) | dead proxy, no gradient — measure the quantity you care about directly |
-| Read a low *training* loss as task success | templated answers hide a chance-level answer span; judge by a held-out answer-span metric |
-| Report the decisive gap on the val split | val baselines can sit below chance (optimistic artifact); report on the disjoint TEST split — same ckpt, `--split test` |
-| Read the per-epoch "val" curve as validation | confirm a disjoint val split exists — many trainers "validate" on the last training batch; the curve is train-fit and catches nothing (§7) |
-| Trust a high PSNR/SSIM/mIoU on sparse/imbalanced data | background-matching inflates it — an all-black/all-bg output scores high, not zero; report foreground-scoped metrics + render (§9) |
-| Read `results: {}` / "0 scored" as `n.s.` | the task-specific scorer didn't apply; generalize it + check the produced `n` |
-| Output identical across distinct inputs ⇒ blame the task | it ignores its input — check INPUT cosine, standardize the input, RENDER the artifact (§8) |
-| `mAP=0 & mIoU=0 & label-acc=0` together ⇒ hunt a gradient/norm bug | all-zero detection = no predictions; check object-vs-frame size + stride-vs-object grid FIRST (§7) |
-| Change input resolution, leave object scale / stride untouched | resolution-coupled hyperparameters silently break; re-audit every pixel/stride size |
-| Explain a val-vs-eval gap as "generalization" before diffing the metric pipeline | same ckpt scored 0.27 vs 0.04 purely from decode budget; diff k/threshold/NMS + split + protocol |
-| Full per-sample vis on a large eval set | cap it; cap aggregate plots too |
-| Trust a "saved/synced" line | verify the artifact exists and loads |
-| A result that only runs from a one-off CLI string | freeze it as a config; unseeded/unfrozen-env numbers aren't reproducible (§13) |
-| Correct a number in one place, leave it stale in the paper/slides/README/CSV | one truth value per number = its source artifact; diff every reported number/name/citation across all docs before submit (§14) |
-| Call a model "diverging/broken" from a smoke-length run | extend 10–50×: undertraining CLIMBS, a real bug stays degenerate / explodes — read the LOSS VALUE (→ ±∞ or negative = invalid-math bug) |
-| Call the job "stalled" from ~0% accelerator util | idle ≠ stalled — if the step counter ADVANCES, the bottleneck is UPSTREAM (CPU data-prep / I/O); profile and relocate THAT |
-| Read 100% accelerator-util as "fully fed" | "util" = "≥1 kernel ran in the window," not useful work — correlate SM clock + power over seconds; low SM clock at 100% = underfed |
-| Read a low generative/diffusion training loss as success | a low ε / denoise loss ≠ good samples — score the SAMPLED output; denoise a real `x_t` to localise sampler vs model |
-
-**Smoke-length runs hide several distinct failures — undertraining vs a loss-math bug vs a degenerate model, the generative training-loss-vs-sample gap, decode-scale, and the local-OOM hazard → `references/verifying/smoke-hidden-failures.md`.**
-
 ## Red flags — STOP
 
-- "The metric is bad, so the change hurts" — before control-diff + reproduce
-- "I'll just re-run in place" — without backing up the original
-- "One safeguard just for this condition" — comparability drift
-- Reasoning from an endpoint number without ever seeing the curve
-- Splits declared clean from reading prep code — probe the prepared artifacts (§4)
-- Selecting epoch / checkpoint / HP on the test split
-- A baseline weaker than its paper, or run at a budget/setting you don't impose on yourself
-- A headline number from a single (or hand-picked) seed, or a superiority claim without design-matched effect/difference evidence
-- A per-epoch "val" metric with no disjoint val loader — it is the training batch; the curve validates nothing
-- A high PSNR/SSIM/mIoU on sparse/imbalanced data taken at face value — background-matching inflates it; render + score foreground
-- Acting on a success log line without verifying the artifact landed
-- A delegated/own "smoke passed (finite)" taken as proof — without input-scale parity, gradient flow, and `model.eval()`
-- "It fails because the task is hard" — before a raw-input ceiling probe + strong-signal easy-task control
-- Optimizing a loss/retrieval metric sitting exactly at its chance floor
-- A net whose output (or rendered intermediate) is identical across distinct inputs — normalize the input and diff a working sibling before blaming task or architecture
-- The same failure signature survived your last 2+ architecture changes — it's upstream; stop redesigning, diff the input
-- "I'll add a reconstruction/diversity head to de-collapse it" — input-caused collapse; standardize the INPUT first
-- Constructing / forwarding / training / **sampling** a real model on the LOCAL dev box — it OOMs the workstation (a 128² diffusion model exhausted a 128 GB box); heavy DL runs on the GPU instance, local = static checks only
-- A generative model's training loss is low so "it works" — without scoring a SAMPLED output (an ε-loss of 0.04 has co-occurred with 3 dB samples)
-- A val/test gap narrated as "poor generalization" before decode budget, split identity, and protocol are diffed
-- Comparing or deleting "duplicate" data by filename alone — hash the bytes; collisions ≠ copies
-- A number you cannot reproduce from released code+config, or an integrity-relevant choice (unfair compare / test-tuning / hidden seeds) left undisclosed — disclose or don't claim
-- A reported number / method name / citation that differs across paper, slides, README, or CSV — reconcile every copy to its source artifact before submitting (§14)
+- A verdict on a surprising number before control-diff, trajectory, and reproduce (§1); a re-run into the original artifact path; a special safeguard for one condition.
+- Splits declared clean from reading prep code instead of probing prepared artifacts; any selection on the test split (§4).
+- A baseline weaker than its paper, or run at a budget/setting you do not impose on yourself; numbers copied across settings; only the winning subset reported (§5).
+- "Smoke passed (finite)" taken as correctness — without input-scale parity, gradient flow, and `model.eval()` (§6).
+- "The task is too hard" before a raw-input ceiling probe and an easy-task control; tuning against a metric at its chance floor (§7).
+- Output identical across distinct inputs blamed on task or architecture; a de-collapse head bolted onto the output (§8).
+- A headline from one seed, a superiority claim without design-matched effect evidence, a high PSNR/SSIM/mIoU on sparse data taken at face value, a val/test gap narrated as "generalization" before decode budget, split, and protocol are diffed (§7, §9).
+- A success log line trusted without checking the artifact landed; a figure trusted without reopening it (§10, §11).
+- A number that cannot be reproduced from released code + config, or an integrity-relevant choice left undisclosed (§11, §13).
+- A number, method name, or citation that differs across paper, slides, README, or CSV (§14).

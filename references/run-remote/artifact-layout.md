@@ -1,9 +1,9 @@
 # Remote run layout — mutable compute, canonical export
 
-This skill owns the compute/control side of one run. It may create mutable state, validate a closeout, and
-produce one sealed export. Project organization belongs to `research-artifact-hygiene`; every durable,
-shared-filesystem, object-store, or Hugging Face copy belongs to the generic `mirror-research-artifacts`
-skill. A compute profile may bind another provider's mount, but it must preserve the same state transitions.
+This skill owns the compute/control side of one run — mutable state, one validated closeout, one sealed
+export — while project organization belongs to `research-artifact-hygiene` and every durable,
+shared-filesystem, object-store, or Hugging Face copy belongs to `mirror-research-artifacts`; a compute
+profile may bind another provider's mount but must preserve the same state transitions.
 
 ## AutoDL binding (exact)
 
@@ -13,22 +13,10 @@ The AutoDL project root is exactly:
 /root/autodl-tmp/<project>/{cache,active,export/.partial,export/<run-id>,quarantine}
 ```
 
-Expanded:
-
-```text
-/root/autodl-tmp/<project>/
-├── cache/                         # regenerable downloads and framework caches
-├── active/
-│   └── <run-id>/                  # mutable producer workspace
-│       └── latest.pth             # optional rolling resume anchor
-├── export/
-│   ├── .partial/
-│   │   └── <run-id>/              # closeout build, never a consumer source
-│   └── <run-id>/                  # sealed; isomorphic to local runs/<run-id>
-└── quarantine/                    # preserved failed or suspect attempts
-```
-
-There is no `inbox/` and no nested `artifacts/` directory in this binding. Code, configuration, dataset,
+`cache/` holds regenerable downloads and framework caches; `active/<run-id>` is the mutable producer
+workspace (optionally holding a rolling `latest.pth`); `export/.partial/<run-id>` is the closeout build and
+never a consumer source; `export/<run-id>` is the sealed run; `quarantine/` preserves failed or suspect
+attempts. There is no `inbox/` and no nested `artifacts/` directory in this binding. Code, configuration, dataset,
 and split identities are recorded in `run.json`; cached bytes are not an identity.
 
 ## `active/<run-id>` — mutable producer state
@@ -94,8 +82,8 @@ Build the capsule under `export/.partial/hardware/<hardware-run-id>` and atomica
 `export/hardware/<hardware-run-id>`; failures go to `quarantine/hardware/<hardware-run-id>--<attempt-id>`.
 
 Existing project-native checkpoint trees are not remote export targets. Keep their identities in place and
-let `supervise-research-closeout` record a legacy acceptance bridge; only newly closed outputs use this
-canonical export tree.
+record a legacy acceptance bridge in the closeout ledger (`research-artifact-hygiene`, if installed); only
+newly closed outputs use this canonical export tree. Never repack such a tree merely to pass closeout.
 
 Closure rules:
 
@@ -110,12 +98,13 @@ Closure rules:
   excluded unless the canonical run schema explicitly classifies one as evidence.
 - A visualization selection is versioned and fixed per test set, identified by a stable `selection_id`, and
   contains exactly K = `min(100, N_test)` sample ids. Schema 2 retains its original `all` or
-  `fixed_model_blind` semantics and `_trust/selections/<selection-id>.json` location. For schema 2, never choose a performance-ranked top 100. Schema 3 is the
-  explicitly approved main-model reconstruction-PSNR ranking for MNIST test, K=512 clean float32: it binds
-  the exact model/config/checkpoint hashes plus the complete unrounded score-source hash and population,
-  sorts PSNR descending with canonical sample ID ascending for ties, and may use any safe project-relative
-  manifest path. Reuse its same ordered roster for every method, condition, and reconstruction,
-  segmentation, or detection run. Full-test metrics still cover the full test population; this ranked
+  `fixed_model_blind` semantics and `_trust/selections/<selection-id>.json` location. For schema 2, never choose a performance-ranked top 100. Schema 3 is an
+  explicitly approved ranked roster: it binds the exact model/config/checkpoint hashes plus
+  the complete unrounded score-source hash and population, fixes one sort key and tie order, and may use
+  any safe project-relative manifest path; reuse that same ordered roster for every method, condition, and
+  reconstruction, segmentation, or detection run. Example (one approved schema-3 binding): the
+  main-model reconstruction-PSNR ranking on MNIST test, K=512 clean float32, sorted PSNR descending with
+  canonical sample ID ascending for ties. Full-test metrics still cover the full test population; this ranked
   roster supports qualitative examples only, never typical, overall, fairness, or unbiased-comparison
   claims. No-GT tests use a separate explicit roster and must not use PSNR ranking. `run.json` binds the one
   manifest path/hash; do not embed a second manifest or legacy visualization index inside the export.
@@ -129,7 +118,7 @@ Closure rules:
 3. Generate canonical `run.json` with scientific identity, protocol, data/split, selection and checkpoint
    bindings only. Do not duplicate the capsule's file roster, byte sizes or payload hashes inside it.
 4. Validate safe checkpoint load, JSON/schema semantics, required paths/coverage, and the isomorphism
-   contract owned by `research-artifact-hygiene`.
+   contract described here; `research-artifact-hygiene`, if installed, validates the same contract.
 5. Require that `export/<run-id>` does not already exist, then atomically rename the partial directory to it.
 6. On any validation or rename failure, preserve the failed partial under
    `quarantine/<run-id>--<attempt-id>` with the failure reason. Never promote it and never delete it without

@@ -1,7 +1,7 @@
 # Multi-node production matrix acceptance
 
-Use this protocol when several rented nodes write independent jobs to one durable/shared result root.
-Keep scheduler state, training state, scientific acceptance, and evidence mirroring separate.
+Use this protocol when several rented nodes write independent jobs to one durable/shared result root,
+keeping scheduler state, training state, scientific acceptance, and evidence mirroring separate.
 
 ## State taxonomy
 

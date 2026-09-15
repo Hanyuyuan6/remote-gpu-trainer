@@ -1,20 +1,12 @@
-> Applies to both local and remote runs.
-
 # Throughput & profiling — make training FAST, find the one bottleneck
 
-How to tell *why* a rented GPU is underfed (GPU-bound vs data-bound vs comms-bound), then apply the
-right speedup in cost order — from a free dataloader knob to `torch.compile` and fused attention. This
-layer owns *making it RUN fast + locating the mechanical bottleneck*; **references/verifying/methodology.md** owns
-*is the resulting number correct*. Cross-link it (**REQUIRED**) wherever a speedup risks changing the
-science (a kernel that alters numerics, a precision swap, dropping samples to "go faster").
+This layer owns making training run fast and locating the mechanical bottleneck (GPU-bound vs data-bound vs
+comms-bound), then applying the right speedup in cost order.
 
 > **Size the run to the box — then PIN it for any comparison.** Auto-sizing batch/`num_workers` to the
 > measured GPU/VRAM/vCPU (Phase 0) to use the card well is fine for a STANDALONE job; but for an ablation
 > or baseline-vs-variant comparison, **pin the same batch across all cells** — auto-maximizing per-box
 > silently changes a variable and breaks comparability (**references/verifying/methodology.md**, REQUIRED).
-
-To jump: `grep -in '<keyword>' references/training/throughput-profiling.md` (e.g. `bound`, `workers`,
-`compile`, `recompile`, `flash`, `sdpa`, `nsys`, `py-spy`, `channels_last`, `tf32`, `overlap`).
 
 ## Table of contents
 
@@ -27,8 +19,6 @@ To jump: `grep -in '<keyword>' references/training/throughput-profiling.md` (e.g
 - **Profilers** — T19 torch.profiler (is-it-data-bound) · T20 nsys / Nsight Systems · T21 py-spy (live, no restart) · T22 memory-snapshot pointer
 - **Multi-GPU / multi-node comms** — T23 DDP/FSDP compute-comm overlap
 - **Pointers** — gotchas_universal.md U8/U21/U24/U25/U38 · oom-memory.md · distributed-launch.md · multinode.md · references/verifying/methodology.md (skill)
-
----
 
 ## Diagnose first — do NOT tune blind
 
@@ -51,11 +41,11 @@ https://apxml.com/courses/planning-optimizing-ai-infrastructure/chapter-5-strate
 
 The highest-signal instrument is a **profiler trace** (T19) — read it before changing anything.
 
-### T2 — `nvidia-smi` GPU-Util % lies; correlate clock + power → gotchas_universal.md U21
+### T2 — `nvidia-smi` GPU-Util % lies; correlate clock + power → `references/run-remote/gotchas_universal.md` U21
 
 A 100%-util tile can hide a starved GPU (a trickle of tiny kernels reads as 100%). The full diagnosis —
 correlate `clocks.current.sm` + mem-bandwidth util + power via `nvidia-smi dmon -s pucvmet -d 1`, and the
-thermal/power-throttle slowdown — lives in **gotchas_universal.md U21/U23**; read it before concluding a run
+thermal/power-throttle slowdown — lives in **`references/run-remote/gotchas_universal.md` U21/U23**; read it before concluding a run
 is GPU-bound. The *0%-util-but-running* (CPU-data-bound) inverse is **U38**, owned by references/verifying/methodology.md.
 
 ### T3 — Cheap triage when no profiler is wired yet: is the host CPU busy?
@@ -71,13 +61,12 @@ GPU SM% high and steady ⇒ GPU-bound (stop here, go to kernels/precision). GPU 
 python worker is CPU-pegged ⇒ data-bound (T4–T8). Both idle ⇒ I/O-bound (stage to NVMe, U8). Then confirm
 with a real trace (T19) before investing in a fix. **GPU SM% low while *many* python threads thrash a few
 cores (not one worker pegged) ⇒ intra-op thread oversubscription** on a vCPU slice, not data-bound — cap
-`OMP_NUM_THREADS` to your cgroup quota (gotchas_universal.md **U40**), don't add dataloader workers.
-
----
+`OMP_NUM_THREADS` to your cgroup quota (`references/run-remote/gotchas_universal.md` **U40**), don't add
+dataloader workers.
 
 ## Dataloader — the #1 reason a rented GPU sits idle
 
-The partial-starve knob set (and its order) is **gotchas_universal.md U24**; this section is the per-knob
+The partial-starve knob set (and its order) is **`references/run-remote/gotchas_universal.md` U24**; this section is the per-knob
 *why/when*. Each helps a *different* failure, so apply by symptom, not as a blanket cargo-cult.
 
 ### T4 — `num_workers`: 0 means the main process loads serially (the default starves the GPU)
@@ -91,7 +80,7 @@ data prep and compute (https://docs.pytorch.org/docs/2.12/data.html).
 **Fix**: set `num_workers > 0` to load asynchronously and overlap fetch with the GPU step. Start at
 `cores − 1`, but **size against per-worker RAM, not CPU count** — each worker `fork`s a full copy of any
 large in-dataset object; too many OOM the cgroup with a bare `Killed` (the quadratic trap + sizing rule are
-**gotchas_universal.md U9**). Not monotonic: past the point where the GPU is fed, extra workers only add RAM
+**`references/run-remote/gotchas_universal.md` U9**). Not monotonic: past the point where the GPU is fed, extra workers only add RAM
 and startup cost.
 
 ### T5 — `persistent_workers=True`: stop paying worker-startup every epoch
@@ -141,7 +130,7 @@ the GPU's consume rate, no depth helps — fix the rate (workers T4, GPU transfo
 
 **Root cause — split the case**:
 - **IO-bound**: bytes arrive slowly from network/HDD/object store; workers sit in `read`. Stage the working
-  set to instance-local **NVMe** (HDD→NVMe gaps reach ~35×) = **gotchas_universal.md U8**; the many-tiny-files
+  set to instance-local **NVMe** (HDD→NVMe gaps reach ~35×) = **`references/run-remote/gotchas_universal.md` U8**; the many-tiny-files
   transaction death + **shard-into-tar / WebDataset** fix = **U25**.
 - **CPU-transform-bound**: a heavy per-sample augment (resize/decode/FFT) saturates CPU; workers CPU-pegged
   (T3), capping at core count. Move the transform to the **GPU** (NVIDIA DALI, `torchvision.transforms.v2`
@@ -151,8 +140,6 @@ the GPU's consume rate, no depth helps — fix the rate (workers T4, GPU transfo
 
 **Fix**: read the trace (T19) — time in `read`/`stat` ⇒ U8/U25; time in a transform fn ⇒ move to GPU.
 
----
-
 ## Free / near-free knobs (set these once at startup on any box)
 
 ### T9 — TF32 / `set_float32_matmul_precision("high")` — the "why is my A100 slow" footgun
@@ -160,8 +147,7 @@ the GPU's consume rate, no depth helps — fix the rate (workers T4, GPU transfo
 The biggest free speedup on Ampere+ for any fp32 matmul path; **OFF by default since PyTorch 1.12**. The
 decision and exact knobs (`torch.set_float32_matmul_precision("high")`, the legacy `allow_tf32` flags,
 `--tf32 1` in HF Trainer, convergence impact) are owned by **references/training/precision-stability.md P2**
-(cross-link there; do NOT restate). If a fresh PyTorch 2.x rental's fp32-heavy run is 2–4× slow with no bug,
-this is the first suspect.
+If a fresh PyTorch 2.x rental's fp32-heavy run is 2–4× slow with no bug, this is the first suspect.
 
 ### T10 — `cudnn.benchmark=True`: autotune conv algorithms (fixed input shapes only)
 
@@ -200,8 +186,6 @@ Optimizes convolutional networks with Tensor Cores + AMP
   precision-stability P9). Grep `detect_anomaly` / leftover `with profile(` wrappers before a long launch
   (https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html); easy to leave on after a NaN hunt.
 
----
-
 ## Mixed precision for speed
 
 ### T13 — bf16/fp16 is a throughput lever, not just a memory lever
@@ -209,16 +193,13 @@ Optimizes convolutional networks with Tensor Cores + AMP
 **Symptom**: fp32 training under-uses Tensor Cores; the GPU has bf16/fp16 tensor cores.
 
 **Root cause**: 16-bit matmuls run on Tensor Cores at much higher FLOP/s and halve activation
-read/write bandwidth — a speedup *on top of* the memory saving (oom-memory.md M6).
+read/write bandwidth — a speedup *on top of* the memory saving
+(`references/training/oom-memory.md` M6).
 
-**Fix**: `torch.autocast("cuda", dtype=torch.bfloat16)` on Ampere+ (the modern default; no GradScaler —
-precision-stability P6) or `bf16=True` in HF `TrainingArguments`. The full precision decision (bf16 vs fp16
-vs the V100/T4 fp16-only path, GradScaler mechanics, NaN/overflow) is owned by
-**references/training/precision-stability.md P1–P10** (cross-link; do NOT restate). The *memory* angle and
-the activation-bucket math is **oom-memory.md M6**. A NaN/divergence after the swap is a numerics question →
-precision-stability / references/verifying/methodology.md (**REQUIRED**).
-
----
+**Fix**: `torch.autocast("cuda", dtype=torch.bfloat16)` on Ampere+ (the modern default) or `bf16=True` in
+HF `TrainingArguments`. The precision decision itself (bf16 vs fp16 vs the V100/T4 fp16-only path,
+GradScaler mechanics, NaN/overflow after a swap) is **`references/training/precision-stability.md` P1–P10**;
+the *memory* angle and the activation-bucket math is **`references/training/oom-memory.md` M6**.
 
 ## Kernels — the levers left once the GPU is fed
 
@@ -248,7 +229,7 @@ raised" (https://docs.pytorch.org/docs/2.12/generated/torch.nn.functional.scaled
   `<96 GB` RAM ninja over-parallelizes and OOMs the build — cap `MAX_JOBS=4 pip install flash-attn
   --no-build-isolation`. Prefer a **prebuilt wheel** matching the `cuXX/torchYY/cpZZ` triple
   (https://github.com/Dao-AILab/flash-attention/issues/1038, https://pypi.org/project/flash-attn/). A
-  torch/CUDA mismatch is **gotchas_universal.md U28**. Whether the fused kernel changes outputs (causal-mask
+  torch/CUDA mismatch is **`references/run-remote/gotchas_universal.md` U28**. Whether the fused kernel changes outputs (causal-mask
   edge cases) is a numerics check → references/verifying/methodology.md (**REQUIRED**).
 
 ### T15 — `torch.compile`: fuse kernels + cut launch overhead (one line, real gains)
@@ -269,8 +250,8 @@ raised" (https://docs.pytorch.org/docs/2.12/generated/torch.nn.functional.scaled
 Reported ~2.2× mean-inference speedups; training gains real but model-dependent. **First step(s) are slow**
 — compilation is lazy on first call (https://huggingface.co/docs/transformers/en/perf_torch_compile); exclude
 warm-up from any throughput measurement. Set `fullgraph=True` while developing to surface graph breaks loudly
-instead of silently losing speed. Whether the compiled *numbers* match eager → references/verifying/methodology.md
-(**REQUIRED**).
+instead of silently losing speed. Whether the compiled *numbers* still match eager is a numerics check, not
+a speed one (see Pointers).
 
 ### T16 — `torch.compile` recompilation trap: variable shapes silently blow the cache → eager
 
@@ -296,8 +277,6 @@ https://github.com/pytorch/pytorch/issues/93457).
 - **Last resort**: raise `torch._dynamo.config.recompile_limit` only if a handful of *stable* extra shapes
   legitimately exist — raising it to mask genuinely unbounded shapes just thrashes.
 
----
-
 ## Memory ↔ speed trades
 
 ### T17 — Activation checkpointing buys memory by spending ~20–30% compute (know the cost)
@@ -305,11 +284,10 @@ https://github.com/pytorch/pytorch/issues/93457).
 **Symptom**: gradient/activation checkpointing is on "to be safe" and training is slow — but the model
 actually fits without it.
 
-**Fix**: checkpointing **recomputes** activations in backward instead of storing them — trading **~20–30%
-extra compute** for a large memory cut (https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html,
-oom-memory.md M7). Enable it **only when activations actually OOM** (full rationale + `use_reentrant=False` /
-`use_cache=False` gotchas = **oom-memory.md M7**); if it fits without, turning it off is a free ~25% speedup.
-On the frontier, checkpoint only the *fewest/heaviest* blocks needed to fit, not the whole model.
+**Fix**: the cost and the gotchas are **`references/training/oom-memory.md` M7**; the throughput reading of
+it is the inverse — checkpointing left **on** for a model that fits is a **~20–30%** tax, so turning it off
+is that much free speed. On the frontier, checkpoint only the *fewest/heaviest* blocks needed to fit, not
+the whole model.
 
 ### T18 — Bigger micro-batch ≈ better GPU utilization (up to the memory wall)
 
@@ -317,9 +295,10 @@ On the frontier, checkpoint only the *fewest/heaviest* blocks needed to fit, not
 batches under-fill Tensor Cores and amortize launch/sync overhead poorly).
 
 **Fix**: raise micro-batch toward the VRAM limit; keep the **effective** batch fixed with grad-accum if the
-result depends on it (`batch 4 × accum 16` beats `batch 1 × accum 64` — oom-memory.md M5). Accuracy/effective-
-batch implications (LR scaling, accumulation loss-weighting) → references/verifying/methodology.md (**REQUIRED**).
-Sizing alongside a concurrent job + `expandable_segments` = **gotchas_universal.md U10** / oom-memory.md M8.
+result depends on it, and prefer the largest micro-batch that fits →
+`references/training/oom-memory.md` M5 (which also carries the LR-scaling and accumulation loss-weighting
+consequences). Sizing alongside a concurrent job + `expandable_segments` =
+**`references/run-remote/gotchas_universal.md` U10** / `references/training/oom-memory.md` M8.
 
 ### T18b — Spare VRAM on a metered GPU is unspent speed (audit it, don't idolize 100%)
 
@@ -328,17 +307,14 @@ run on a per-hour instance, and nobody can say why. The waste is not the idle me
 the speed that memory could have bought.
 
 **Fix**: treat sustained low VRAM as a trigger for one deliberate audit, in this order: (1) activation
-checkpointing on although the model fits → turn it off, ~25% free speedup (T17); (2) micro-batch far
+checkpointing on although the model fits → turn it off, ~20–30% free speedup (T17); (2) micro-batch far
 below the memory wall → raise it, shrinking grad-accum to keep the effective batch pinned (T18/M5);
 (3) offload/low-mem flags (`device_map`, ZeRO offload, `low_cpu_mem_usage` paths) carried over from a
 smaller box → drop them. Only change the *effective* batch when the run is not part of a pinned
 comparison, then re-scale LR per references/verifying/methodology.md (**REQUIRED**). Stop at ~85–90%
 VRAM — fragmentation, eval peaks, and shape variance own the rest; a mid-run OOM on a rented box costs
 more than the last GB ever pays. The target metric is **throughput per rented hour** (samples/s,
-tokens/s), never VRAM% — 44% VRAM with SMs saturated is a healthy run; 100% VRAM with SMs starved is a
-slow one wearing a full costume.
-
----
+tokens/s), never VRAM%.
 
 ## Profilers — measure the bottleneck, don't guess it
 
@@ -411,16 +387,15 @@ py-spy record -o prof.svg --pid <PID>   # flame graph over a window
 ```
 "The profiled program needs no import, no decorator, and no restart." On a rented box mid-run, `py-spy dump`
 instantly distinguishes a *hung* process (stuck in `recv`/lock/`all_reduce`) from a *slow* one (busy in a
-transform) — pairs with the "is it actually hung?" check (gotchas_universal.md U17, references/verifying/methodology.md
+transform) — pairs with the "is it actually hung?" check (`references/run-remote/gotchas_universal.md` U17,
+references/verifying/methodology.md
 **REQUIRED**). May need `--native` for C-extension frames and `sudo`/`SYS_PTRACE` to attach.
 
-### T22 — CUDA memory snapshot/visualizer → oom-memory.md M19
+### T22 — CUDA memory snapshot/visualizer → `references/training/oom-memory.md` M19
 
 For *what allocated the memory* (not time), the `torch.cuda.memory._record_memory_history` snapshot +
 https://pytorch.org/memory_viz timeline is owned by **references/training/oom-memory.md M19/M18**. It is a
-memory tool, not a throughput tool — listed here only so the profiler menu is complete. Do NOT restate.
-
----
+memory tool, not a throughput tool — listed here only so the profiler menu is complete.
 
 ## Multi-GPU / multi-node communication
 
@@ -449,11 +424,9 @@ straggler, MTU mismatch) is **references/run-remote/multinode.md** (**REQUIRED**
 across boxes is usually one of those, not a bucket-size tune. Whether a world-size change silently rescaled
 the effective batch/LR is a science question → references/verifying/methodology.md (**REQUIRED**).
 
----
+## Pointers — throughput gotchas catalogued elsewhere
 
-## Pointers — throughput gotchas catalogued elsewhere (do NOT restate)
-
-- **gotchas_universal.md** — **U8** stage hot data to local NVMe (IO-bound) · **U21** `nvidia-smi` util% is
+- **`references/run-remote/gotchas_universal.md`** — **U8** stage hot data to local NVMe (IO-bound) · **U21** `nvidia-smi` util% is
   a liar (+ **U23** thermal/power throttle) · **U24** dataloader-starvation knob order · **U25** millions of
   small files → shard into tar/WebDataset · **U38** GPU 0%-util CPU-data-bound (owned by verifying-dl).
 - **references/training/oom-memory.md** — M5 micro-batch/grad-accum · M6 bf16 activations · M7 activation

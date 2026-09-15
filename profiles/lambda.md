@@ -28,16 +28,8 @@ instinct: here, durable design (checkpoint-to-NFS + idempotent resume) is **mand
 > `cloud.lambda.ai`); the **REST API base is still `cloud.lambdalabs.com/api/v1`** and `cloud.lambda.ai`
 > also resolves (verified docs.lambda.ai + cloud-api 2026-06). Treat both hosts as live.
 
-To jump: `grep -in <keyword> profiles/lambda.md`.
-
-**Table of contents** — 1. LAUNCH · 2. STORAGE MODEL (survival matrix) · 3. NETWORK ·
-4. SPOT / INTERRUPTION + RESUME · 5. TEARDOWN / BILLING · 6. DAEMON TOOL · 7. TOP GOTCHAS (LAM1–LAM13) +
-Platform-specific debugging · 8. SCRIPT OVERRIDES.
-
 Universal gotchas (CRLF, inode/`df -i`, silent sync, cgroup OOM, spot grace) are NOT repeated here —
 see `references/run-remote/gotchas_universal.md`. Universal invariants → `references/run-remote/principles.md`.
-
----
 
 ## 1. LAUNCH
 
@@ -67,8 +59,6 @@ Reserved / 1-Click Clusters provide flat-rate multi-node (own billing model — 
 
 > **verify:** `ssh ubuntu@<IP> 'python -c "import torch;print(torch.cuda.is_available())"'` → `True`.
 
----
-
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*
 
 Two tiers, and the trap is that the default working location is the **volatile** one.
@@ -97,8 +87,6 @@ Two tiers, and the trap is that the default working location is the **volatile**
 checkpoint left on local NVMe dies with the box. If no filesystem was attached at launch, the only durable
 path is to `pull` the result off-box (free egress) before terminating.
 
----
-
 ## 3. NETWORK
 
 - **Direct, unproxied egress.** US/global cloud — egress to HF / GitHub / PyPI is direct; **no
@@ -122,8 +110,6 @@ path is to `pull` the result off-box (free egress) before terminating.
   staff 2026-06). The IP is fixed for an instance's life, but **terminate→relaunch yields a NEW IP**
   (LAM10) — re-read it from the console/API every launch; never hard-code it in automation.
 
----
-
 ## 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 
 **No spot / preemptible tier — and no mid-run eviction.** This is the key divergence from vast.ai/RunPod:
@@ -146,8 +132,6 @@ mid-epoch. The interruption model is different in kind:
 
 Cadence formula (Young/Daly) + atomic-write resume → `references/run-remote/spot-resilience.md`. Here the formula's
 μ is effectively "time between voluntary relaunches," not a preemption rate.
-
----
 
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
 
@@ -174,14 +158,12 @@ What each action preserves:
 - **restart / cold reboot** — does **not** stop the meter and does **not** wipe disk, but a **cold reboot
   erases RAM and bypasses safe shutdown** — reserve it for a frozen box only (LAM9).
 
-**Iron Law (SKILL.md Phase 5):** NO `terminate` until the canonical remote is restored into an independent
-temporary consumer, exact roster/bytes/SHA-256 match, the checkpoint safely loads, full-prediction metrics
-recompute there, AND the user approves the cost-affecting action. NFS may be the canonical remote but is not
-its own independent readback; the consumer may be another remote node. Because terminate is destructive and
-irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss**. Cross-link:
-`superpowers:verification-before-completion` (REQUIRED) for the general gate.
-
----
+**Teardown Iron Law — Lambda clause.** NO `terminate` until the teardown gate passes and the user approves
+the cost-affecting action (teardown gate: `references/run-remote/lifecycle_checklist.md` Phase 5). NFS may be
+the canonical remote but is **not** its own independent readback; the consumer may be another remote node.
+Because terminate is destructive and irreversible, an unverified `cp`/`rsync` to NFS means **permanent
+loss**. If a separate verification-before-completion skill is installed, invoke it; otherwise stop before
+release.
 
 ## 6. DAEMON TOOL
 
@@ -196,8 +178,6 @@ irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss**. Cross-
   Clusters** for multi-node; no platform job-queue otherwise. SkyPilot moves the box on capacity loss but
   **restarts the process from scratch — the checkpoint-load restores progress** (don't assume the
   framework resumes training state).
-
----
 
 ## 7. TOP GOTCHAS  (Lambda-pinned — universal ones live in `references/run-remote/gotchas_universal.md`)
 
@@ -292,6 +272,7 @@ irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss**. Cross-
   from the CUDA index `pip install torch --index-url https://download.pytorch.org/whl/cu128` (aarch64 GPU
   wheels live there), or compile from source for newer versions; relax exact pins. (DeepTalk GH200 thread
   + pytorch.org 2026-06)
+
 - **LAM14 — the terminate API call itself can hang; set a client-side timeout and re-check state.**
   Symptom: a terminate request blocks indefinitely on a control-plane stall; because terminate is the
   meter-stop action, billing status is unresolved while the client waits; if the terminate did not land,
@@ -323,8 +304,6 @@ irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss**. Cross-
   failed to come up — check the console state and prefer a fresh **terminate→relaunch** (resume from NFS)
   over fighting a cold-reboot that already wiped RAM (LAM9).
 
----
-
 ## 8. SCRIPT OVERRIDES
 
 Values to parameterize the `scripts/` templates for Lambda:
@@ -340,12 +319,7 @@ DETACH=         tmux  (apt install if absent; nohup fallback)
 SSH_USER=       ubuntu   (NOT root)
 ```
 
-Notes for the wrapper:
-- Default checkpoint dir → the NFS mount, not `/home/ubuntu` — the latter is erased on terminate.
-- If no NFS filesystem is attached, set the wrapper to `pull` checkpoints to local on the periodic timer
-  (free egress) instead of relying on durable on-box storage.
-- Re-read the instance IP from the console/API on every launch (LAM10) — never persist it in SSH config.
-- Do not `pip install torch` / blanket `apt full-upgrade` on the rental — use the Stack as-is (LAM7/8/11);
-  on GH200 use the ARM build (LAM13).
-- The teardown step is **terminate via API**, gated by the Iron Law; verify billing stopped (no *Alert*
-  state) and add an explicit reminder to **delete the NFS filesystem** (LAM6) when the project is done.
+Note for the wrapper: if no NFS filesystem is attached, `pull` checkpoints to local on the periodic timer
+(free egress) instead of relying on durable on-box storage. The remaining wrapper constraints are the
+gotchas themselves — LAM6, LAM7/LAM8/LAM11/LAM13, LAM10 — and the teardown step is **terminate via API**,
+gated by §5.

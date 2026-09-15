@@ -1,27 +1,9 @@
 # SSH Transport — keys, keepalive, resumable copy, secrets-via-stdin
 
-Platform-agnostic SSH + file-transfer substrate for every `ssh-rental` profile (AutoDL, RunPod,
-vast.ai, Lambda, Paperspace, China, bare SSH). One-time config so subsequent commands are short and
-password-less, plus the copy/secret patterns that survive flaky networks and short rentals. Concrete
-hosts, ports, and credential locations are **profile facts** — this file owns the *mechanism*, the
-profile (`profiles/<platform>.md` §1/§3/§8) owns the *values*.
-
-To jump: `grep -in '<keyword>' references/run-remote/ssh_transport.md` (e.g. `keepalive`, `rsync`, `stdin`, `crlf`).
-
-## Table of contents
-
-1. Key generation
-2. Push the public key to an instance
-3. `~/.ssh/config` alias + keepalive tuning
-4. Verify the alias
-5. Resumable copy — rsync vs scp, and WHY rsync
-6. Bulk per-dir download loop
-7. Move secrets via stdin — never inline a key, never on a durable FS
-8. CRLF — `.sh` authored on Windows breaks on Linux
-9. Two SSH flavors — proxied/basic SSH cannot `scp`
-10. Transport gotchas (Symptom → Root cause → Fix)
-
----
+Platform-agnostic SSH + file-transfer substrate for every `ssh-rental` profile (AutoDL, RunPod, vast.ai,
+Lambda, Paperspace, China, bare SSH) — one-time config so later commands are short and password-less, plus
+the copy/secret patterns that survive flaky networks and short rentals: this file owns the *mechanism*, the
+profile (`profiles/<platform>.md` §1/§3/§8) owns the *values* (hosts, ports, credential locations).
 
 ## 1. Key generation
 
@@ -89,7 +71,8 @@ Host proj-2
 ```
 
 **Naming**: `<project>-<index>` (e.g. `proj-1`, `proj-2`) reads cleanly in a fan-out loop; avoid bare
-`gpu1`. **Why the three keepalive options**:
+`gpu1`. The provider-side instance name and the local ssh alias are different objects: keep the alias short
+and the console name the full `<project>-<purpose>-<date>` form. **Why the three keepalive options**:
 
 - `ServerAliveInterval 60` — send an application-layer heartbeat every 60 s, so a NAT/idle timeout on
   the path does not silently drop a parked connection (mid-`scp`, or an open monitor).
@@ -111,7 +94,8 @@ for a in proj-1 proj-2 proj-3 proj-4; do
 done
 ```
 
-Each should print a distinct hostname. Then the env probe (SKILL.md Phase 1):
+Each should print a distinct hostname. Then the env probe (`references/run-remote/lifecycle_checklist.md`
+Phase 1):
 `ssh <alias> 'python -c "import torch;print(torch.cuda.is_available())"'`.
 
 ## 5. Resumable copy — rsync vs scp, and WHY rsync
@@ -228,8 +212,7 @@ Symptom → Root cause → Fix:
 
 Every shell script in `scripts/` ships LF and starts `#!/usr/bin/env bash` + `set -u`; keep that
 contract when authoring new ones. **Never** put an unquoted `|` inside a `grep` regex in a transport or
-poll script — the shell splits it into piped commands and the first reads stdin → hangs forever
-(`references/run-remote/monitoring_patterns.md`). And for ad-hoc REMOTE PROBES, prefer the shortest
+poll script (see `references/run-remote/monitoring_patterns.md` §0, fact 4). And for ad-hoc REMOTE PROBES, prefer the shortest
 single-line command that answers the question: long multi-line heredocs sent over ssh have been observed
 garbled in transit (an `echo "=== src ==="` printed as a literal) — when a probe's output looks scrambled,
 suspect the transport before the box, and fall back to minimal one-liners.
@@ -252,40 +235,20 @@ use the instance's direct SSH port. Each profile's §3 NETWORK names which endpo
 ports change on restart. If only proxied SSH is available, transfer out-of-band instead (push results to
 object storage / HF Hub from on-box and pull from there).
 
-## 10. Transport gotchas (Symptom → Root cause → Fix)
+## 10. Transport gotchas
 
-Universal gotchas (disk-full, inode, OOM, silent sync) are **not** repeated here — see
-`references/run-remote/gotchas_universal.md`. These are transport-specific.
+T1–T5 are transport faces of catalogued entries — the full Symptom → Root cause → Fix lives in
+`references/run-remote/gotchas_universal.md`:
 
-**T1 — SSH exits 255 / "Connection reset" right after a `pkill`/`kill`.**
-Symptom: `ssh <alias> 'pkill -9 -f src.train'` returns `Connection reset by peer`, exit 255. → Root
-cause: killing the process tree disrupts the PTY chain; the SSH client receives EOF and exits — and
-anything *after* the kill in that same one-liner never runs. → Fix: this is **normal**, not a failure.
-Re-ssh to verify (`ssh <alias> "pgrep -af src.train | head -1 || echo CLEAN"`). Split kill and relaunch
-into **two** ssh calls — never `pkill X; relaunch X` in one command, the relaunch is dropped with the
-session.
+- **T1** SSH exits 255 / "Connection reset" right after a `pkill`/`kill`, and anything after the kill in
+  that same one-liner never runs → **U1** and **U4**.
+- **T2** a large `scp -r` drops mid-transfer and loses everything after the first dirs → **U12** (fix: §5
+  `rsync --partial` or the §6 per-dir loop).
+- **T3** a `.sh` "ends in `\r`" after a Windows→Linux sync → **U26** (fix: §8).
+- **T4** a credential leaks into history, or its shared-FS upload silently fails → **U34** (fix: §7).
+- **T5** `scp dest open "/root/x/": Failure` because a sibling command never created the dir → **U13**.
 
-**T2 — large `scp -r` drops with "Read from remote host … reset by peer" 30–60 min in.**
-Symptom: a 130 GB `scp -r` aborts mid-transfer; the local tree has only the first few dirs, the rest
-gone. → Root cause: one SSH stream for the whole transfer; any blip kills it and `scp` does not resume.
-→ Fix: use `rsync --partial` (§5) or the per-dir loop (§6) — each dir an independent session, re-run
-skips completed dirs.
-
-**T3 — `.sh` "ends in `\r`" after a Windows→Linux sync.**
-See §8 (`.gitattributes` `*.sh text eol=lf`; on-box `sed -i 's/\r$//'`).
-
-**T4 — a credential leaks into history / a shared FS, or its FS upload silently fails.**
-Symptom: a key pasted into an `ssh`/`scp` command lands in transcripts and hook logs; an scp of the key
-to the shared FS "succeeds" but the file is missing or corrupt. → Root cause: the value appeared in a
-command line; and some platforms' FS classifiers block/corrupt credential-shaped uploads. → Fix: §7 —
-stream one block via stdin to the per-instance disk, verify by capability not by echo.
-
-**T5 — `scp dest open "/root/x/": Failure` instantly.**
-Symptom: a (often parallel/background) `scp big.tar <alias>:/root/x/` fails at once because the
-destination dir doesn't exist — a sibling command meant to `mkdir` it ran later, or was blocked. → Root
-cause: the transfer assumed a directory a *different* command was supposed to create (a parallel-setup
-race). → Fix: make every transfer self-sufficient — create the dest in the same command:
-`ssh <alias> 'mkdir -p /root/x' && scp … || retry`. Never assume a sibling created the destination.
+T6 is transport-only and stays here:
 
 **T6 — `Host key verification failed` after an instance is recreated.**
 Symptom: same `connect.<region>.<provider>.com` host, new host key, so SSH refuses. → Root cause: the

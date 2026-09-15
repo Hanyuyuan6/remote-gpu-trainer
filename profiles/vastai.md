@@ -8,7 +8,7 @@ spot_available: true            # interruptible (bid) auction — central to the
 spot_grace: ~0s                 # preemption is an abrupt pause, no documented notice / no SIGTERM
 shared_fs: false               # NO platform-wide FS; Volumes are machine-locked (per-GPU bound on restart)
 inode_cap: host-dependent       # undocumented; whatever the host's Docker storage driver gives
-free_egress: host-dependent     # CORRECTED: host-set bandwidth price; billed per byte in AND out, often $0 but not guaranteed
+free_egress: host-dependent     # host-set bandwidth price; billed per byte in AND out, often $0 but not guaranteed
 china_mirror_needed: false      # no China DCs and no platform proxy; fix HF at workload level
 host_driver_cuda_max: image-dependent  # CUDA ships in the chosen Docker image; must be ≤ host driver
 local_nvme: host-dependent
@@ -21,26 +21,13 @@ job, and **copy results off before `destroy`** — the only verb that stops the 
 
 > **Surface to the user up front (principle #10):** ⚠️ Danger clocks — a **`stop`ped instance bills its disk FOREVER** (only `destroy` stops the full meter, and `destroy` deletes everything); **bandwidth/egress bills continuously**, host-priced. Risk — rent only **verified, high-reliability** hosts with a direct port (an unverified host can vanish mid-run); cloud-sync works even while stopped (§5), the cleanest durable target.
 
-**Table of contents** (`grep -in '^## ' profiles/vastai.md` to jump):
-- §1 LAUNCH — offer-driven, Docker-image-is-the-env
-- §2 STORAGE MODEL — per-machine-local disk; survival matrix; cloud-sync escape hatch
-- §3 NETWORK — proxy vs direct SSH; random ports; host-set bandwidth; no China proxy
-- §4 SPOT / INTERRUPTION + RESUME — bid auction, ~0 s pause, GPU-bound resume, status-poll loop
-- §5 TEARDOWN / BILLING — `destroy` is the meter-stop; `stop` bills disk forever; bandwidth bills always
-- §6 DAEMON TOOL — tmux dies on restart; `onstart.sh` is the durable relaunch
-- §7 TOP GOTCHAS — VAST1–VAST13, platform-pinned + Platform-specific debugging
-- §8 SCRIPT OVERRIDES — values to parameterize `scripts/`
-
 Universal gotchas are NOT restated here — see `references/run-remote/gotchas_universal.md`. Spot cadence math and
 atomic-resume live in `references/run-remote/spot-resilience.md`.
 
 **The one fact that reshapes everything:** vast.ai is a **decentralized marketplace of third-party hosts**,
-not a uniform first-party cloud. Consequences that diverge from AutoDL: **no platform-wide shared FS**, **no
-China-mirror proxy**, **no single prebuilt conda env** (the Docker image IS the env), **storage is locked to
-one physical host and even one GPU ID**, **bandwidth is host-priced (not free by fiat)**, and
-**interruptible (bid) preemption is a real, central, abrupt model**.
-
----
+not a uniform first-party cloud — hence **no platform-wide shared FS**, **no China-mirror proxy**, **no
+prebuilt conda env** (the Docker image IS the env), **storage locked to one physical host and even one GPU
+ID**, **host-priced bandwidth (not free by fiat)**, and **first-class, abrupt interruptible-bid preemption**.
 
 ## 1. LAUNCH
 
@@ -78,8 +65,6 @@ a fat image stuck in `Loading` is the slow-download symptom (VAST13).
 → **verify:** `vastai show instance OFFER_ID` lists the new instance `running`, and an in-container
 `nvidia-smi` (via `--onstart-cmd` or first SSH) shows the expected GPU with a CUDA that matches the image.
 
----
-
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*
 
 Three tiers; the persistence + region story is the single biggest divergence from AutoDL — **there is no
@@ -111,8 +96,6 @@ AutoDL-style platform constant.
 → **verify:** before any teardown, `vastai copy <id>:/path/to/ckpt local:/path/to/local` exits 0 (or
 `vastai cloud copy` completes) AND the local artifact loads (`scripts/verify_local.py`).
 
----
-
 ## 3. NETWORK
 
 **Shared public IP + random external port.** Each instance shares a host's (usually shared) public IP;
@@ -136,7 +119,7 @@ direct + a resumable loop (`references/run-remote/gotchas_universal.md` U12). Fo
 (e.g. `-p 8081:8081`); Jupyter defaults to internal 8080 gated by `JUPYTER_TOKEN` (override the port via
 `JUPYTER_PORT`).
 
-**Bandwidth is metered and host-priced — NOT free by fiat (corrected).** "You are charged bandwidth prices
+**Bandwidth is metered and host-priced — NOT free by fiat.** "You are charged bandwidth prices
 for every byte sent or received to or from the instance, regardless of what state it is in," and "pricing is
 set by the host and is specific to each offer" (verified docs.vast.ai/.../reference/billing +
 .../instances/pricing 2026-06). In practice many hosts price egress at ~$0 (vast is generally a low/zero
@@ -151,8 +134,6 @@ fix is the job's **own** `HF_ENDPOINT=https://hf-mirror.com` / `hf_transfer`, no
 
 → **verify:** `ssh <alias> 'echo ok'` over the **direct** endpoint, then a 1-file `vastai copy` round-trip
 exits 0.
-
----
 
 ## 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 
@@ -189,8 +170,6 @@ atomic temp→fsync→rename resume → `references/run-remote/spot-resilience.m
 → **verify:** kill-and-resume drill — `vastai stop instance <id>` then `start`; the job resumes from the last
 checkpoint step, not epoch 0.
 
----
-
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
 
 This is the most error-prone section — be precise. (verified docs.vast.ai/.../reference/billing +
@@ -216,19 +195,18 @@ This is the most error-prone section — be precise. (verified docs.vast.ai/.../
 - **Poll-loop cost trap:** a status-poll loop with no timeout/error check will loop forever while the
   instance keeps accruing disk + bandwidth charges. Bound every poll loop with `timeout` + an exit check.
 
-**Teardown Iron Law (vast.ai instance):** NO `destroy` until checkpoints are **copied off-box AND verified by
+**Teardown Iron Law — vast.ai clause.** NO `destroy` until checkpoints are **copied off-box AND verified by
 load** — either `vastai copy`-ed to local (`scripts/verify_local.py` reports 100% OK) or `vastai cloud copy`
-confirmed — the copy exit status is checked (VAST2), and the user has **explicitly approved** the
-cost-affecting action. "It looked done in the log" is not evidence (principle #3). Because `destroy` deletes
-the disk and there is **no shared FS to fall back on**, the confirmation gate matters more here, not less.
-
----
+confirmed, with the copy's exit status checked (VAST2) — the teardown gate passes
+(`references/run-remote/lifecycle_checklist.md` Phase 5), and the user has **explicitly approved** the
+cost-affecting action. Because `destroy` deletes the disk and there is **no shared FS to fall back on**, the
+confirmation gate matters more here, not less.
 
 ## 6. DAEMON TOOL
 
-- **Auto-tmux on SSH login** (same as AutoDL): login attaches a tmux session "to keep the session active
-  even if you disconnect." Disable with `touch ~/.no_auto_tmux` then reconnect (verified docs.vast.ai
-  jupyter-ssh FAQ 2026-06).
+- **Auto-tmux on SSH login:** login *auto-attaches* a tmux session "to keep the session active even if you
+  disconnect" — the image ships tmux, unlike AutoDL where it is often absent and must be installed. Disable
+  with `touch ~/.no_auto_tmux` then reconnect (verified docs.vast.ai jupyter-ssh FAQ 2026-06).
 - **tmux survives an SSH disconnect but NOT a container restart/reboot/spot-resume** — a reboot or
   spot-resume wipes the tmux session. The **durable relaunch hook is `/root/onstart.sh`** (the
   `--onstart-cmd`), which re-runs on every container start. Put the training relaunch there, **not** in
@@ -239,8 +217,6 @@ the disk and there is **no shared FS to fall back on**, the confirmation gate ma
   line (verified docs.vast.ai jupyter-ssh FAQ 2026-06).
 - **Native queue:** vast.ai has **Serverless / autoscaler** for queue-style workloads, but single-instance
   training has no managed scheduler — the orchestrator + `onstart.sh` + checkpoint-resume **is** the queue.
-
----
 
 ## 7. TOP GOTCHAS  (platform-pinned; Symptom → Root cause → Fix)
 
@@ -341,8 +317,6 @@ egress-surcharge) live in `references/run-remote/gotchas_universal.md` — not r
   in `gotchas_universal.md` (HF). A fat-image stall *before* SSH is visible only via `vastai show logs`.
 - **Find the real external ports / SSH target:** `vastai show instance <id>` lists the port map and
   `vastai ssh-url <id>` prints the connection string — never assume port 22 is reachable (VAST6).
-
----
 
 ## 8. SCRIPT OVERRIDES
 

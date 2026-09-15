@@ -16,11 +16,12 @@ local_nvme: true                # /root/autodl-tmp data disk is fast local NVMe,
 
 # Profile: AutoDL
 
-The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with a 3-tier storage substrate
-and one fixed project run layout
-and the *one* rental where the meter-stop action is non-destructive. Fills all 8 schema sections
-(`profiles/_schema.md`) at full depth. Read this **before Phase 0**; it owns every path, proxy, billing
-verb, and TB pin the SKILL.md phases delegate to. Universal gotchas are NOT restated here — see
+The deepest, battle-tested profile — a Chinese cgroup-isolated SSH-rental with a 3-tier storage substrate,
+one fixed project run layout, and the *one* rental where the meter-stop action is non-destructive.
+Fills all 8 schema sections
+(`profiles/_schema.md`) at full depth. Read it before Phase 0 of
+`references/run-remote/lifecycle_checklist.md`; it owns every path, proxy, billing verb and TB pin the run
+phases delegate to. Universal gotchas are NOT restated here — see
 `references/run-remote/gotchas_universal.md`.
 
 > **Surface to the user up front (principle #10):** conveniences most users miss — the console has a
@@ -30,21 +31,6 @@ verb, and TB pin the SKILL.md phases delegate to. Universal gotchas are NOT rest
 > `/root/autodl-fs` survives a 释放; low balance / arrears force-stop. And the TB tile is **pinned to
 > `/root/tf-logs`** — write your logger there (or symlink) or the panel shows empty (AD7 / U39).
 
-To jump: `grep -in '<keyword>' profiles/autodl.md` (e.g. `grep -in inode profiles/autodl.md`).
-
-## Table of contents
-
-1. LAUNCH — entry points + env contract (base miniconda IS the env)
-2. STORAGE MODEL — 3 tiers + fixed run layout + survival matrix + inode cap
-3. NETWORK — academic proxy + China mirrors + pinned TB
-4. SPOT / INTERRUPTION + RESUME — effectively on-demand
-5. TEARDOWN / BILLING — 关机 stops the meter AND keeps the disk (the AutoDL exception)
-6. DAEMON TOOL — tmux / nohup
-7. TOP GOTCHAS — AD1..AD9, platform-pinned
-8. SCRIPT OVERRIDES — values to parameterize `scripts/`
-
----
-
 ## 1. LAUNCH
 
 **First time? (rent → reach the box).** On the AutoDL console: pick a GPU + region with stock → **创建实例**
@@ -53,25 +39,24 @@ To jump: `grep -in '<keyword>' profiles/autodl.md` (e.g. `grep -in inode profile
 console → test `ssh -p <PORT> root@connect.<region>.seetacloud.com 'nvidia-smi'`. That string is your entry to
 every phase below. (Console-only steps; AutoDL's UI shifts — re-check its docs if a label moved.)
 
-**Name the box on creation (user ruling 2026-09-10 「你用的电脑都要改名称啊，以做标记」).** Rename every instance in the console to `<project>-<purpose>-<yyyymmdd>` (for example `<project>-main-20260914`) before the first ssh, mirror that name in the `~/.ssh/config` alias and in `active/<run-id>/run.json`, and treat an unnamed instance in the console as not yet yours to use. **Entry points.** Web console (创建实例) for create/release/power; per-instance SSH connection string from
+**Name the box on creation.** Rename each instance in the console to `<project>-<purpose>-<yyyymmdd>`
+before the first ssh, mirror that name in the `~/.ssh/config` alias and in `active/<run-id>/run.json`, and
+treat an unnamed instance as not yet yours to use.
+
+**Entry points.** Web console (创建实例) for create/release/power; per-instance SSH connection string from
 the console (`ssh -p <PORT> root@connect.<region>.seetacloud.com`). No first-class platform CLI/REST for
 job control — SSH is the orchestration channel. Set a stable alias per instance in `~/.ssh/config`
 (`Host autodl-<proj>-<N>`, `HostName connect.<region>.seetacloud.com`, `Port <PORT>`) so every later
 command is short; the port is assigned at create-time and **changes on re-create** (update the alias).
 SSH/keepalive config → `references/run-remote/ssh_transport.md`.
 
-**Env contract — the prebuilt base miniconda IS the env (AD6).** The image ships the full DL stack into
-**base** (`/root/miniconda3/bin/python`); there is no `/root/miniconda3/envs/<name>/`. Base is the
-deliberate single-tenant project env. **Never `conda create` / `conda clone base`** on the rental —
-cloning wastes ~16 GB of base packages + the disk just freed, for zero benefit. Train with the explicit
-interpreter `/root/miniconda3/bin/python`; in remote polls use that path or pure shell, never bare
-`python3` (it may be absent → exit 127). When installing project deps, **filter framework pins** so a
-`requirements.txt` does not downgrade the image's torch build (AD9).
-
-> The "no DL in conda base" discipline applies to the *persistent local* machine only — on an ephemeral
-> rental, base IS the expected place to run. A local env-guard hook must exempt remote-ssh + instance base.
-
----
+**Env contract — the prebuilt base miniconda IS the env (AD6, §7).** The image ships the full DL stack
+into **base** (`/root/miniconda3/bin/python`); there is no `/root/miniconda3/envs/<name>/`, and base is the
+deliberate single-tenant project env. **Never `conda create` / `conda clone base`** on the rental — cloning
+wastes ~16 GB of base packages plus the disk just freed, for zero benefit. A local "no DL in conda base"
+guard applies to persistent workstations only and must exempt remote-ssh + instance base. When installing
+project deps, **filter framework pins** so a `requirements.txt` does not downgrade the image's torch build
+(AD9).
 
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*
 
@@ -109,73 +94,54 @@ source-of-truth while the run is open. A later 释放 still loses any open run, 
 `export/<run-id>` and verify/pull or hand that closed capsule to `mirror-research-artifacts` before release.
 Never sync `active/` as a whole to `/root/autodl-fs` or Hugging Face.
 
-**Region/DC-lock (AD3).** FS quota is region-scoped; each region has its own physical mount. Files written
-from a `<region-a>` instance are invisible to a `<region-b>` instance even at the identical
-`/root/autodl-fs/` path. Create the FS quota in the **same region** as the instances; to bridge regions,
-pick one region as primary and scp between them (slow). Confirm sharing with a write-from-one / read-from-
-another probe before relying on it.
+**Region/DC-lock (AD3, §7).** FS quota is region-scoped — identical `/root/autodl-fs/` paths in two regions
+are different physical mounts. Create the quota in the same region as the instances; bridge regions by scp
+from a chosen primary (slow), and confirm sharing with a write-one / read-other probe before relying on it.
 
-**Inode discipline (AD4).** The ~200K cap is **independent of bytes**: `df -h` can read 34% while `cp`
-fails "No space left" because `df -i` is at 100%. Bound exported visualization before rendering:
-for each test, `min(100, N_test) × conditions × task-native roles`, with stable atomic files only under
+**Inode discipline (AD4, §7).** The ~200K cap is **independent of bytes**: `df -h` can read 34% while `cp`
+fails "No space left" because `df -i` is at 100%. Bound exported visualization before rendering: for each
+test, `min(100, N_test) × conditions × task-native roles`, with stable atomic files only under
 `test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`. This full coverage is required for
 every declared test and is not an optional preview set. Hardware output follows the same coverage rule but
 must close as a separate `export/hardware/<hardware-run-id>` capsule, never inside software
-`export/<run-id>`. Bind the one versioned selection manifest path/hash in `run.json`: schema 2 retains its
-`_trust/selections/<selection-id>.json` `all`/`fixed_model_blind` contract, while schema 3 may use any safe
-project-relative path and binds exact MNIST-test K=512 clean float32 main-model/config/checkpoint identities
-plus the complete unrounded reconstruction-PSNR score source and population. Schema 3 uses descending PSNR,
-canonical sample-ID tie breaks, K=`min(100,N_test)`, and the same ordered roster for all methods, conditions,
-and reconstruction/segmentation/detection exports. It is qualitative-only and cannot support typical,
-overall, fairness, or unbiased-comparison claims. No-GT data requires a separate explicit non-PSNR roster.
-Do not add a second selection manifest, legacy visualization index, default montage/contact sheet, or full
-test-render tree; full-test metrics retain the full population.
+`export/<run-id>`. Do not add a second selection manifest, legacy visualization index, default
+montage/contact sheet, or full test-render tree; full-test metrics retain the full population.
+Selection-manifest and vis-coverage rules: `references/run-remote/artifact-layout.md`.
 Checkpoints are inode-cheap but still retention-bounded. Monitor `df -i`, not just `df -h` (Phase 0 +
-every space check). Eval-artifact sizing policy is owned by **REQUIRED:**
-references/verifying/methodology.md.
+every space check). Eval-artifact sizing policy is owned by `references/verifying/methodology.md`.
 
-**Data-disk hog (AD5).** When `/root/autodl-tmp` hits 100% but `active/` looks small, the real hog is the
-**HF cache symlinked onto the data disk** (`~/.cache/huggingface` → tens of GB of model blobs). Keep
-the cache at `/root/autodl-tmp/<project>/cache/` and audit
-`du -sh ~/.cache/huggingface/hub/models--* | sort -rh` before deleting checkpoints; redirect `HF_HOME` to
-the data disk explicitly (see §8). Disk is expandable — prefer expand over silently shrinking the
-experiment (principle #9). Get explicit user confirmation naming `rm -rf` targets (the harness classifier
-blocks agent-inferred irreversible deletes).
-
----
+**Data-disk hog (AD5, §7).** When `/root/autodl-tmp` hits 100% but `active/` looks small, the real hog is
+the **HF cache symlinked onto the data disk** (`~/.cache/huggingface` → tens of GB of model blobs): keep the
+cache at `/root/autodl-tmp/<project>/cache/` by redirecting `HF_HOME` explicitly (see §8). Disk is
+expandable — prefer expand over silently shrinking the experiment (principle #9); present exact `rm -rf`
+targets and sizes and get explicit user confirmation before any delete.
 
 ## 3. NETWORK
 
-**Egress proxy — `source /etc/network_turbo` is MANDATORY (AD1).** Instances start with no proxy; direct
-egress to `api.wandb.ai` / `huggingface.co` / `github.com` / `pypi.org` is unreliable (0.5 s … 300 s …
-blocked). Every shell that calls wandb / HF / pip / git must `source /etc/network_turbo` first
-(`source /etc/network_turbo 2>/dev/null || true` at the top of every wrapper). It exports
-`http_proxy` / `https_proxy` pointing at the in-DC academic proxy (`http://<proxy-ip>:<port>`), a
-`no_proxy` allow-list for domestic endpoints, and the CA bundle. Perf delta: wandb push ~0.8 s with turbo
-vs >120 s timeout without — no exceptions, even a small `wandb.summary` write can wedge for minutes.
+**Egress proxy — `source /etc/network_turbo` is MANDATORY (AD1, §7).** Put
+`source /etc/network_turbo 2>/dev/null || true` at the top of every shell/wrapper that calls wandb / HF /
+pip / git. It exports `http_proxy` / `https_proxy` pointing at the in-DC academic proxy
+(`http://<proxy-ip>:<port>`), a `no_proxy` allow-list for domestic endpoints, and the CA bundle. Perf
+delta: wandb push ~0.8 s with turbo vs >120 s timeout without — no exceptions, even a small
+`wandb.summary` write can wedge for minutes.
 
-**China mirrors (AD2).** HF behind the GFW → `HF_ENDPOINT=https://hf-mirror.com` or pull from
-**ModelScope**. Two compounding traps: (a) HF's **Xet CAS backend** is NOT mirror-proxied (the mirror
-covers the API but big `.safetensors` shards still hit the flaky international endpoint) →
-`export HF_HUB_DISABLE_XET=1` (or `pip uninstall -y hf_xet`) to force the classic LFS path the mirror does
-proxy; (b) `no_proxy` in network_turbo lists `modelscope.com` but **not** `modelscope.cn` — routing a
-DOMESTIC source through the international-acceleration proxy SLOWS it. Wrap every download in a
-`timeout <s> … && break` retry loop (resumes partial files; a stall ≠ permanent failure). Full mirror
-table + `no_proxy` ladder → `references/run-remote/china-network.md`.
+**China mirrors (AD2, §7).** Two AutoDL-only traps compound on top of the generic mirror story: (a) HF's
+**Xet CAS backend** is NOT mirror-proxied (the mirror covers the API but big `.safetensors` shards still hit
+the flaky international endpoint) → `export HF_HUB_DISABLE_XET=1` (or `pip uninstall -y hf_xet`) forces the
+classic LFS path the mirror does proxy; (b) `no_proxy` in network_turbo lists `modelscope.com` but **not**
+`modelscope.cn` — routing a DOMESTIC source through the international-acceleration proxy SLOWS it. A stall
+is not a permanent failure: wrap every download in a `timeout <s> … && break` retry loop. Mirror table,
+endpoint values and the `no_proxy` ladder → `references/run-remote/china-network.md`.
 
 **Port exposure.** AutoDL maps a single custom port (6006) for user services; the platform also exposes
 JupyterLab. SSH port is the per-instance `<PORT>` and changes on re-create.
 
-**Platform TensorBoard is pinned to `/root/tf-logs` (AD7).** The image autostarts
+**Platform TensorBoard is pinned to `/root/tf-logs` (AD7, §7).** The image autostarts
 `tensorboard --logdir /root/tf-logs --port 6007` on boot and the AutoPanel TB tile proxies straight to that
-pid — the `--logdir` is hard-pinned and cannot be reconfigured from inside the container. Events written
-anywhere else are invisible in the web tile no matter how correct the `SummaryWriter` setup. Fix: write to
-`SummaryWriter(log_dir="/root/tf-logs/<run>")`, or `ln -sfn <your-tb> /root/tf-logs/<run>` (the pinned TB
-has `--reload=5`, so the run appears within ~5 s — no restart). Verify with
-`curl -s http://127.0.0.1:6007/data/runs` (expect a JSON array with the run), NOT `ss` (can show nothing
-inside the container while curl returns 200). Local logs die with the instance — for durable curves use a
-hosted tracker (use `huggingface-skills:huggingface-trackio` when installed; otherwise use the
-project's existing hosted tracker and the bundled `scripts/wandb_forensics.py`).
+pid; the `--logdir` cannot be reconfigured from inside the container, so events written anywhere else are
+invisible in the web tile no matter how correct the `SummaryWriter` setup. Local logs die with the instance
+— for durable curves use a hosted tracker (`huggingface-skills:huggingface-trackio` if installed, otherwise
+the project's existing hosted tracker plus the bundled `scripts/wandb_forensics.py`).
 
 **SSH flavor.** Direct-TCP SSH on the per-instance host:port — `scp`/`rsync` work normally (no proxied-SSH
 restriction). Use a per-dir resumable loop for large transfers (single-connection `scp -r` resets mid-
@@ -183,8 +149,6 @@ transfer); `rsync -avz --partial` is preferred. Transport setup and host-key ver
 `references/run-remote/ssh_transport.md`; after a connection loss, re-probe remote truth through
 `references/run-remote/monitoring_patterns.md`. A connection error alone does not establish run,
 instance, or billing state.
-
----
 
 ## 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 
@@ -202,9 +166,7 @@ the *identical launch command* survive an SSH drop; checkpoint+resume makes it s
 formula → `references/run-remote/spot-resilience.md` (the formula generalizes even without spot — it bounds
 re-compute lost to a reboot).
 
----
-
-## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law; verified 2026-06, author daily use)*
+## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law; verified 2026-06)*
 
 **关机 (shutdown / power-off) STOPS the meter AND keeps `/root` + both disks — this is the AutoDL
 EXCEPTION among rentals.** Everywhere else (RunPod wipes the container disk on stop, vast bills the disk
@@ -226,14 +188,13 @@ only *within* the window; for a longer pause, first close canonical `export/<run
 hand it to `mirror-research-artifacts` for a durable replica. Low balance / arrears also force-stop the
 instance. **Surface this to the user up front
 (principle #10)** — most users assume 关机 parks the box indefinitely.
-**Teardown Iron Law (SKILL.md Phase 5):** no 释放 / file-delete until the canonical remote is restored into an
-independent temporary consumer, every byte/hash matches, `best.pth` safely loads, full-prediction metrics
-recompute there, AND the user explicitly approves — "it looked done in the log" is not evidence (principle
-#3). The consumer may be remote. Because 关机 is non-destructive here, the cheap safe move when unsure
-is to **关机 and ask**, never 释放 on a guess. If a separate verification-before-completion skill is
-installed, invoke it; otherwise stop before release. The generic `mirror-research-artifacts` workflow owns
-the external frozen manifest, live exact-roster validation, and readback evidence; a local
-`PULL_VERIFIED.json` is one optional delivery receipt and none belongs in canonical `run.json`.
+**Teardown Iron Law — AutoDL clause.** NO 释放 and no file-delete until the teardown gate passes and the
+user explicitly approves (teardown gate: `references/run-remote/lifecycle_checklist.md` Phase 5). Because
+关机 is non-destructive here, the cheap safe move when unsure is to **关机 and ask**, never 释放 on a guess.
+If a separate verification-before-completion skill is installed, invoke it; otherwise stop before release.
+The generic `mirror-research-artifacts` workflow owns the external frozen manifest, live exact-roster
+validation, and readback evidence; a local `PULL_VERIFIED.json` is one optional delivery receipt and none
+belongs in canonical `run.json`.
 
 **Container shutdown wrapper.** Some AutoDL images expose `/usr/bin/shutdown` as a short provider-owned
 ASCII shell wrapper with no shebang rather than an ELF binary. An interactive shell handles `ENOEXEC` by
@@ -250,8 +211,6 @@ one `SIGTERM`); otherwise prefer the provider console/API 关机 control or stop
 blocker. Do not require ELF/shebang after exact semantic acceptance, and never guess a private signal from a
 partial body.
 
----
-
 ## 6. DAEMON TOOL
 
 **tmux** is the detach primitive when present, but **tmux is often NOT installed on a fresh AutoDL image**
@@ -260,11 +219,10 @@ and `apt-get install tmux` fails when egress is down. Zero-dependency fallback:
 no package. Verify either with `pgrep -af <script>`. The detach survives an SSH drop; it does **not**
 survive a 关机/reboot — that is what checkpoint+resume (§4) is for.
 
-⚠️ **Field ruling (2026-07): long-running nohup processes have been observed killed by the AutoDL
-gateway** ("远程长驻进程必须 tmux,nohup 会被 AutoDL 网关杀"). Treat nohup as a *short-job* escape hatch
-only; for anything long-running, getting tmux installed is worth the delay. If forced onto nohup, assume
-silent death: re-verify liveness (`pgrep` + log mtime) at every check-in, and **re-arm the monitoring
-waiter at every report** — one missed re-arm cost a 5.5 h monitoring blackout + 4 h idle GPU.
+⚠️ **The AutoDL gateway has been observed killing long-lived `nohup` processes.** Treat nohup as a
+*short-job* escape hatch only; for anything long-running, getting tmux installed is worth the delay. If
+forced onto nohup, assume silent death: re-verify liveness (`pgrep` + log mtime) at every check-in, and
+**re-arm the monitoring waiter at every report** — a missed re-arm is a silent monitoring blackout.
 
 **Native queue: none.** AutoDL has no built-in scheduler → use the bundled `scripts/run_queue.sh.template`
 (resumable queue iterator, `start_index` for resume) driving `scripts/run_one.sh.template` per cell.
@@ -276,8 +234,6 @@ durable architecture (`references/run-remote/monitoring_patterns.md`). Detect "d
 (`grep -q 'QUEUE DONE' master.log`), never by `pgrep` (the waiter's own cmdline matches the pattern and
 loops forever). A cloud scheduler cannot reach the rented box (no SSH key in a cloud sandbox — secret
 leak); the honest recurring check is the remote self-monitor + a session loop with the local key.
-
----
 
 ## 7. TOP GOTCHAS  (AutoDL-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
@@ -309,10 +265,9 @@ exhausts it. *Fix:* monitor `df -i`; export a bounded, manifest-listed sample co
 files, never a default montage or full render dump; keep mutable render work under `active/`, not the FS.
 Inventory exact cleanup candidates and obtain explicit deletion authorization—quarantine is not trash.
 
-**AD5 — data disk full; HF cache is the hidden hog; agent `rm` auto-denied.** *Symptom:*
-`/root/autodl-tmp` at 100% though `active/` looks small; an agent `rm -rf` of "obvious junk" is auto-denied.
-*Root cause:* `~/.cache/huggingface` is symlinked onto the data disk, so the **HF model cache** (tens of
-GB) is the real hog; the harness blocks irreversible `rm -rf` whose targets the agent inferred. *Fix:*
+**AD5 — data disk full; the HF cache is the hidden hog.** *Symptom:* `/root/autodl-tmp` at 100% though
+`active/` looks small, and "obvious junk" looks safe to delete. *Root cause:* `~/.cache/huggingface` is
+symlinked onto the data disk, so the **HF model cache** (tens of GB) is the real hog. *Fix:*
 audit `du -sh ~/.cache/huggingface/hub/models--* | sort -rh`; set `HF_HOME` to a chosen data-disk dir + keep
 the metric/eval JSONs (tiny evidence); present exact deletion targets + sizes for explicit user
 confirmation; offer "clean vs expand the disk".
@@ -348,8 +303,6 @@ replaces it with a wheel lacking the arch's kernels → `no kernel image is avai
 `grep -ivE '^(torch|torchvision|torchaudio)' requirements.txt > /root/req_remote.txt && pip install -r
 /root/req_remote.txt` — keep the image build; smoke `torch.cuda.get_device_capability()` + a heavy import
 before launch; disclose the off-band torch version with results.
-
----
 
 ## 8. SCRIPT OVERRIDES
 
@@ -399,11 +352,3 @@ If the job emits real capture/hardware results, do not add them to `$EXPORT_ROOT
 capture/decode/model-run bindings to `research-artifact-hygiene` or build, validate and atomically close the
 weight-free capsule at `$PARTIAL_ROOT/hardware/<hardware-run-id>` →
 `$EXPORT_ROOT/hardware/<hardware-run-id>`; its mandatory vis has full conditions × roles × K coverage.
-
-
-## Browser boot (user's Chrome, standing authorization)
-
-Screenshot / JS-injection / CDP timeouts recur when the console page is busy or mid-navigation
-(≥15 occurrences across the 2026-08 sessions). Discipline: treat a timeout as "page busy" —
-wait-and-retry with backoff (2s / 5s / 10s), never hammer the same call, and re-read the page
-state (read_page) before the next action instead of repeating the failed one.

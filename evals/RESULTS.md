@@ -1,51 +1,44 @@
 # Agentic navigation results (Tier 2)
 
-Each row: a **fresh agent** was given the skill and one scenario `prompt` from
-[`cases.jsonl`](cases.jsonl), told to navigate **from SKILL.md only** (follow the documented
-routing, no blind grep), and graded on whether it reached a correct, specific answer covering the
-scenario's `must_cover` points within ~2 hops.
+Each row: a **fresh agent** was given the skill root and one scenario `prompt` from
+[`cases.jsonl`](cases.jsonl), told to read `SKILL.md` first and then open files **only through the routing
+SKILL.md documents** (no grep, no tree search), and graded on whether it reached a correct, specific answer
+covering the scenario's `must_cover` points within ~2 hops of `SKILL.md`.
 
-**Methodology / honesty caveats** (so a reader can weight this correctly):
-- Runs to date were gathered **during development**, on the development model (Claude Opus class),
-  as subagent dispatches — not an independent third party, and **not yet** the
-  Haiku/Sonnet/Opus sweep Anthropic's best-practices recommend. Treat as *author-run smoke evals*,
-  not a neutral benchmark.
-- These prove **routing + retrieval** inside the skill, not the truth of platform facts on a live
-  box (only AutoDL is battle-tested — see the repo README's "Verification status").
-- Single run per scenario; no adversarial/perturbed phrasings yet.
+**How to weight this.** The runs were made by the maintainer, as Claude Opus 5 subagents dispatched from a
+Claude Code session, one run per scenario, on the canonical prompt wording — author-run smoke evals, not a
+neutral benchmark, not a multi-model sweep, and no paraphrased or adversarial prompts. They prove **routing and
+retrieval inside the skill**, not the truth of platform facts on a live box (only the AutoDL profile is
+hands-on; see the README's Verification status).
 
-## Results — 2026-06
+## Results — 2026-09-15 (current hub)
 
-| Scenario | Verdict | Hops | Navigation path observed |
-|---|---|---|---|
-| convergence-frozen-resnet | **PASS** | 1 | SKILL.md "When training breaks" → `convergence-debugging.md` O1 (overfit-one-batch) + O2 (params-not-in-optimizer) + O17 (frozen-still-in-optimizer) + O18 (frozen-BN drift) + O6 (Adam vs AdamW) |
-| data-worker-rng-dup | **PASS** | 1 | SKILL.md "When training breaks" → `data-pipeline.md` DP1 (numpy fork-RNG dup; worker_init_fn fix) |
-| oom-on-step-2 | **PASS** | ≤2 | SKILL.md "When training breaks" → `oom-memory.md` (fit-it ladder + OOM-at-step-2 / Adam lazy state) |
-| nccl-one-rank-hang | **PASS** | ≤2 | SKILL.md → `distributed-launch.md` (desync toolkit D19 / one-rank-diverged D20) |
-| diffusion-loss-low-samples-bad | **PASS** | ≤2 | SKILL.md → `by-domain.md` diffusion section (DF1 loss≠quality, DF2 EMA weights) |
-| nan-loss-spike-bf16 | **PASS** | ≤2 | SKILL.md "When training breaks" → `precision-stability.md` P8/P12/P15 (NaN-origin + warmup spike + z-loss) |
-| resume-epoch-reset | **PASS** | 1 | SKILL.md → `checkpoint-resume.md` C1/C12/C14 (save FULL state: epoch/step/scheduler/RNG/scaler) |
-| throughput-gpu-starved | **PASS** | ≤2 | SKILL.md → `throughput-profiling.md` T1/T4 (GPU-bound vs data-bound; num_workers/prefetch) |
-| runpod-spot-resume-teardown | **PASS** | ≤2 | SKILL.md → `profiles/runpod.md` §4/§5 → `spot-resilience.md` → `checkpoint-resume.md` C3 |
-| vastai-teardown-billing | **PASS** | ≤2 | SKILL.md → `profiles/vastai.md` §5 → `lifecycle_checklist.md` Phase 5 |
-| autodl-inode-disk-full | **PASS** | ≤2 | SKILL.md → the inode/disk gotcha (principle #5 / `gotchas_universal.md` U7) |
-| china-hf-download-stall | **PASS** | ≤2 | SKILL.md → `references/run-remote/china-network.md` (HF_ENDPOINT=hf-mirror, hf_transfer caution) |
-| lambda-stop-vs-terminate | **PASS** | ≤2 | SKILL.md → `profiles/lambda.md` (no stop state; terminate irreversible) |
-| autodl-first-contact-15day | **PASS** | 1 | SKILL.md principle #10 → `profiles/autodl.md` Surface block + AD-DANGER (关机 auto-releases after 15 days) |
-| result-validity-report-gate | **PASS** | 2 | SKILL.md VERIFY → `references/verifying/methodology.md` §1 (control-diff bug/effect/noise) + §9 (≥3-seed mean±std) + §4 (leakage normcase/same-bytes) + §14 (re-derive before report) |
+| Scenario | Verdict | Hops | Path observed (after SKILL.md) | Entries cited |
+|---|---|---|---|---|
+| convergence-frozen-resnet | **PASS** | 1 | Resource router → `references/training/convergence-debugging.md` | O1, O2, O17, O18, O6 (+O7, O12, O14, O22, O23) |
+| data-worker-rng-dup | **PASS** | 1 | Resource router → `references/training/data-pipeline.md` | DP1 (+DP14) |
+| oom-on-step-2 | **PASS** | 1 | Resource router → `references/training/oom-memory.md` | M17 (+M2, M18, M19, M12, M5, M8, M3; O11) |
+| nccl-one-rank-hang | **PASS** | 1 | Resource router → `references/training/distributed-launch.md` | D19–D23, D9 (+M16, MN1–MN4) |
+| diffusion-loss-low-samples-bad | **PASS** | 2 | Resource router → `references/training/by-domain.md` → `references/verifying/methodology.md` | DF1–DF8, C16; methodology §1, §6, §9 |
+| nan-loss-spike-bf16 | **PASS** | 1 | Resource router → `references/training/precision-stability.md` | P8, P9, P11, P12, P13, P14, P15–P18 |
+| resume-epoch-reset | **PASS** | 1 | Resource router → `references/training/checkpoint-resume.md` | C12, C14, C1, C3, C2, C9–C11, C13, C15, C16 |
+| throughput-gpu-starved | **PASS** | 1 | Resource router → `references/training/throughput-profiling.md` | T1–T8, T18, T18b, T19 (+U8, U9, U21, U23, U24, U25, U40) |
+| runpod-spot-resume-teardown | **PASS** | 2 | RUN step 1 → `profiles/runpod.md` §4/§5 → `references/run-remote/spot-resilience.md` | RP1–RP4, RP6–RP8, RP11, RP13, RP14; spot §1–§5 |
+| vastai-teardown-billing | **PASS** | 1 | RUN step 1 → `profiles/vastai.md` §2/§5/§8 | VAST1, VAST2, VAST3, VAST8, VAST9, VAST12, VAST15 |
+| autodl-inode-disk-full | **PASS** | 1 | RUN step 1 → `profiles/autodl.md` §2 | AD4, AD5 |
+| china-hf-download-stall | **PASS** | 2 | RUN step 1 → `profiles/china.md` §3 → `references/run-remote/china-network.md` | china-network §1–§5, GS2 |
+| lambda-stop-vs-terminate | **PASS** | 1 | RUN step 1 → `profiles/lambda.md` §2/§3/§5 | LAM1, LAM2, LAM3, LAM6, LAM10, LAM14 |
+| autodl-first-contact-15day | **PASS** | 1 | RUN step 1 → `profiles/autodl.md` (surface block, §5) | AD-DANGER, AD1, AD2, AD3, AD4, AD6, AD7, AD9 |
+| result-validity-report-gate | **PASS** | 1 | VERIFY → `references/verifying/methodology.md` | §1, §4, §5, §6, §7, §9, §11–§14; SKILL.md custody section |
 
-**Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
-correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs the **full
-`cases.jsonl`**; its summary line is authoritative.
-The 15 scenarios above have agentic evidence; later load-bearing guards, including the AutoDL canonical
-export/mirror boundary, are structural-only unless their case explicitly records an agentic re-run.
+**Summary: 15/15 scenarios routed correctly**, each to a correct, specific answer within ≤2 hops (12 in one
+hop). The Tier-1 structural check (`run_evals.py`) runs the full
+49-case `cases.jsonl` and is the authoritative regression line; the 34 cases without a row here are
+structural-only guards unless their `agentic` field records a run.
 
-The AutoDL structural case also checks both executable delivery helpers independently and fails if either
-reintroduces `results/<exp-id>/runs` or `selected/checkpoints`; this is a path-regression check, not evidence
-that a project-specific reproduction command has been filled or run.
+## Known gaps
 
-## Known gaps (what these results do NOT yet cover)
-
-- No multi-model sweep (Haiku/Sonnet/Opus) — required to claim the best-practices testing bar.
-- No adversarial/paraphrased prompts (e.g. the user describes the symptom in non-canonical words).
-- No live-platform validation of the facts the agent retrieves (the verification-status caveat).
+- Single run per scenario, one model family; no Haiku/Sonnet/Opus sweep and no paraphrased prompts.
+- No live-platform validation of the facts the agent retrieves.
+- An earlier 15/15 run (2026-06) was recorded against the pre-2026-08 hub layout and is superseded by the
+  table above.

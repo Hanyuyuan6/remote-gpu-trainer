@@ -1,20 +1,9 @@
-> Applies to both local and remote runs.
-
 # Correct checkpointing & idempotent resume — full state, atomic write, sharded checkpoints, framework APIs
 
-Make a training job resume **exactly where it stopped** after any kill — not "reload the weights and
-silently restart the epoch." This layer owns the *mechanics*: what FULL state to save, how to write it
-without corruption, how to load it unconditionally, and the framework-specific knobs (FSDP / DeepSpeed /
-HF Trainer / Accelerate / Lightning) plus the resume **bugs** that make a job look resumed while it
-quietly lost progress. **references/verifying/methodology.md** (**REQUIRED**) owns *is the resumed number correct* —
-e.g. proving step/epoch/loss actually continued instead of resetting is its reproducibility check applied
-here. The spot/preemption *cadence* (when + how often, Young/Daly) lives in
-`references/run-remote/spot-resilience.md` (**REQUIRED** for any interruptible/spot tier) — this file is the *content
-and correctness* of each checkpoint; that file is the *timing*.
-
-To jump: `grep -in '<keyword>' references/training/checkpoint-resume.md` (e.g. `atomic`, `rename`,
-`scaler`, `ema`, `sampler`, `fsdp`, `sharded`, `zero_to_fp32`, `dcp`, `resume_from_checkpoint`,
-`save_state`, `ckpt_path`, `save_total_limit`, `reshuffle`).
+This file owns the *content and correctness* of each checkpoint (what FULL state to save, how to write it,
+how to load it unconditionally, the framework knobs, and the resume bugs that look resumed while losing
+progress); the *timing* — cadence, Young/Daly, preemption grace — is
+`references/run-remote/spot-resilience.md` (**REQUIRED** for any interruptible/spot tier).
 
 ## Table of contents
 
@@ -23,8 +12,6 @@ To jump: `grep -in '<keyword>' references/training/checkpoint-resume.md` (e.g. `
 - **Framework APIs** — C9 HF-Trainer-resume_from_checkpoint+save_total_limit · C10 Accelerate-save_state/load_state · C11 Lightning-ModelCheckpoint+ckpt_path
 - **The resume BUGS** — C12 epoch-restarts · C13 data-reshuffles/order · C14 LR-schedule-resets · C15 scaler-not-restored · C16 EMA-not-saved · C17 save_total_limit-deletes-best · C18 strict-load-key-mismatch
 - **Pointers** — disk-full on save → gotchas_universal.md U6 · silent sync → U33 · keepable-policy/save_top_k → references/verifying/methodology.md (skill) · cadence/Young-Daly → spot-resilience.md
-
----
 
 ## The contract
 
@@ -90,7 +77,7 @@ retry) re-trains from zero. A divergent "first launch" code path also drifts fro
 **identical launch command** converges to the same end state no matter how many times it runs. This is
 what makes principle #7's "retry the identical config" actually *resume* instead of restart, and it is the
 universal spine (principle #8) under SSH-drop / Slurm-walltime / K8s-reschedule / spot-preemption. Skeleton:
-`references/run-remote/spot-resilience.md` §3 (`load_latest_if_any`).
+`references/run-remote/spot-resilience.md` §5 (`load_latest_if_any`).
 
 ### C4 — Checkpoint to the platform's DURABLE location, not local scratch
 
@@ -105,8 +92,6 @@ or mirror local→durable on the checkpoint timer. The single biggest portabilit
 disk survives — see each profile's STORAGE survival-matrix and the SKILL Quick-reference table. Gate the
 sync on the actual copy result, never an unconditional `echo synced` →
 `references/run-remote/gotchas_universal.md` U33.
-
----
 
 ## Sharded checkpoints (multi-GPU)
 
@@ -182,8 +167,6 @@ ranks; the on-disk checkpoint is inherently sharded across per-rank files — it
   longer needs DeepSpeed. For ZeRO-3, set
   `"zero_optimization": {"stage3_gather_16bit_weights_on_model_save": true}` + `engine.save_16bit_model(dir)`.
 
----
-
 ## Framework APIs
 
 ### C9 — HF Trainer: `resume_from_checkpoint` + `save_total_limit` (and what it actually saves)
@@ -245,8 +228,6 @@ states, callback states, loop state, and the 16-bit scaling factor (AMP)
   callback. Lightning's DeepSpeed strategy writes a ZeRO dir — convert with
   `lightning.pytorch.utilities.deepspeed.convert_zero_checkpoint_to_fp32_state_dict` (C8 analogue).
 
----
-
 ## The resume BUGS (looks resumed, silently lost progress)
 
 These are the "it ran without error but the result is wrong" traps — confirm the fix with the
@@ -272,14 +253,11 @@ LR warm-up replays. (The remote-ops version of this — a tmux script re-execute
 resume), hurting convergence or leaking.
 
 **Root cause**: two distinct bugs. (a) Resume restarts the epoch from batch 0 without skipping consumed
-batches. (b) `DistributedSampler` seeds its shuffle from an internal epoch that defaults to 0 forever
-unless `sampler.set_epoch(epoch)` is called each epoch — so every epoch (and every resume) produces the
-**identical** order
-([PyTorch #31771](https://github.com/pytorch/pytorch/issues/31771),
-[DistributedSampler docs](https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler)).
+batches. (b) `DistributedSampler` replays one identical order when `set_epoch` is never called →
+`references/training/data-pipeline.md` DP14.
 
-**Fix**: call `train_sampler.set_epoch(epoch)` at the top of every epoch (restore the epoch counter on
-resume so the shuffle stream continues). For mid-epoch resume, fast-forward consumed batches
+**Fix**: restore the **epoch counter** on resume and pass it to `train_sampler.set_epoch(epoch)`, so the
+shuffle stream continues instead of restarting. For mid-epoch resume, fast-forward consumed batches
 (`accelerator.skip_first_batches`, C10) or use a resumable/stateful sampler (`torchdata`
 `StatefulDataLoader`) whose offset is in the checkpoint (C1).
 
@@ -321,8 +299,8 @@ saving only the live model `state_dict` loses it, so EMA reinitializes from the 
 
 **Fix**: include `ema.state_dict()` (and SWA `AveragedModel` / `swa_scheduler` state) in the checkpoint
 dict (C1) and restore it. In Lightning, persist it via `on_save_checkpoint`/`on_load_checkpoint` (C11).
-This is a *which-weights-are-correct* concern at the boundary — cross-link **references/verifying/methodology.md**
-(**REQUIRED**) for confirming the evaluated weights are the intended ones.
+The EMA copy is usually the one evaluated and exported, so confirm *which* weights a reported number came
+from.
 
 ### C17 — `save_total_limit` / `save_top_k` deletes the very checkpoint resume needs
 
@@ -334,10 +312,9 @@ and neither guarantees the most-recent-step checkpoint is the one kept — so th
 one deleted.
 
 **Fix**: keep an explicit `last`/`latest` alongside the top-k (`save_last=True` in Lightning, C11; in HF,
-`load_best_model_at_end=True` makes Trainer preserve the best checkpoint past `save_total_limit`). General
-keepable-checkpoint *policy* (how many, which selection criterion, `save_top_k ≤ 3`, prune `latest`) is
-owned by **references/verifying/methodology.md** (**REQUIRED**); the disk-budget consequence is
-`references/run-remote/gotchas_universal.md` U6.
+`load_best_model_at_end=True` makes Trainer preserve the best checkpoint past `save_total_limit`). How many
+to keep and by which selection criterion is policy, not mechanics (see Pointers); the disk-budget
+consequence is `references/run-remote/gotchas_universal.md` U6.
 
 ### C18 — `load_state_dict` key mismatch on resume (`module.` prefix, compiled-model prefix)
 
@@ -354,9 +331,7 @@ checkpoint is wrapper-agnostic. On load, strip the prefix if present
 (`{k.replace("module.", "").replace("_orig_mod.", ""): v for k, v in sd.items()}`). Keep `strict=True`
 while debugging a resume so a silent partial load can't masquerade as success; only relax it deliberately.
 
----
-
-## Pointers — owned elsewhere, do NOT restate here
+## Pointers — owned elsewhere
 
 - **Cadence — when/how often** (Young/Daly `W = sqrt(2·mu·C)`, grace windows, opportunistic SIGTERM
   last-flush, the runnable atomic skeleton) → `references/run-remote/spot-resilience.md` (**REQUIRED**, spot tier).

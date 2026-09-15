@@ -1,24 +1,10 @@
 # Parallel Ablation Fan-out — FS-shared deployment, isolated write paths, reconciliation
 
-Run N ablation cells in parallel across instances/queues without corrupting shared state, then
-reconcile and re-verify every cell before any teardown. The mechanism is **one job per cell with an
-isolated write path**; the discipline is **`superpowers:dispatching-parallel-agents`'s independence
-predicate + reconciliation**. If the named companion skills are installed, use them; otherwise apply
-the independence, reconciliation, and evidence gates fully specified in this file.
-
-To jump: `grep -in <keyword> references/run-remote/parallel_ablation.md`.
-
-## Table of contents
-
-1. The fan-out model (one job per cell)
-2. FS-shared wrapper deployment (place once, never mutate mid-run)
-3. The independence predicate (isolated write path = the analogue of a git worktree)
-4. The portable job request (describe once, run on any profile)
-5. Queue-file format + resume via `start_index`
-6. Mandatory post-fan-out reconciliation + full re-verify
-7. Gotchas
-
----
+Run N ablation cells in parallel across instances/queues without corrupting shared state, then reconcile and
+re-verify every cell before any teardown: the mechanism is **one job per cell with an isolated write path**
+and the discipline is the independence predicate + reconciliation — taken from
+`superpowers:dispatching-parallel-agents` when that companion is installed, and otherwise applied in full
+from the gates specified in this file.
 
 ## 1. The fan-out model
 
@@ -37,8 +23,6 @@ instance C  tmux ──> run_queue.sh queueC.txt ──> cell c1 ──> ...
 
 Split the N cells across queue files (one per instance) by cost, not count — route the long cells
 (detection at 50 epochs) onto faster/idle instances so the queues finish near-simultaneously.
-
----
 
 ## 2. FS-shared wrapper deployment
 
@@ -60,8 +44,6 @@ middle of a *different* file and re-executes blocks (duplicate runs, stalled que
 
 The FS copy is also the durable safety net: `run_one`'s post-success step syncs `best.pth` +
 metrics + log to `FS/<name>/`, so a released/dead instance still leaves its cell's result on the FS.
-
----
 
 ## 3. The independence predicate
 
@@ -88,8 +70,6 @@ distinct paths automatically; **two queue lines must never share a `<name>`.**
 What is read-shared (the immutable wrappers, the dataset, the base image) is fine — the predicate
 only forbids shared **mutable** state.
 
----
-
 ## 4. The portable job request
 
 Describe a sweep once so the *same* fan-out runs against any profile (the launcher resolves it
@@ -106,8 +86,6 @@ run: "bash run_queue.sh queue.txt"               # the per-instance entry point
 
 Per-instance disk budget = `ckpt_size × cells_in_this_queue + scratch` (principle #5). Pre-compute it
 in Phase 0; a fan-out that under-budgets disk fails the *last* cells of each queue, not the first.
-
----
 
 ## 5. Queue-file format + resume
 
@@ -144,8 +122,6 @@ shared FS mount or a central "who-owns-what" registry), or (b) **explicitly remo
 queue** (kill the origin tmux / delete its queue line) rather than trusting the origin to skip. Don't
 assume "the runner is idempotent" covers a cross-box move — verify which filesystem the predicate reads.
 
----
-
 ## 6. Mandatory post-fan-out reconciliation + full re-verify
 
 Use installed dispatch/verification companions when available; otherwise run the same bundled
@@ -167,12 +143,8 @@ Reconcile and re-verify **every cell before any teardown** — this is a hard ga
    **identical config** (principle #7) on a live instance via `start_index`, or append its line to a
    fresh queue. Do not patch one cell's config to make it pass — that destroys comparability.
 
-Only after the roster is 100% reconciled and the canonical remote is restored into an independent temporary
-consumer does the teardown Iron Law unlock (SKILL.md Phase 5): every cell must match bytes/SHA-256 and load,
-full-prediction metrics must recompute there, and the user must approve the cost-affecting action. The consumer
-may be remote; a resident local checkpoint is optional.
-
----
+Only after the roster is 100% reconciled does the teardown gate in
+`references/run-remote/lifecycle_checklist.md` Phase 5 apply.
 
 ## 7. Gotchas
 
@@ -201,7 +173,5 @@ Symptom: resume skips or re-runs the wrong rows. → Root cause: a line was inse
 shifting every subsequent index. → Fix: append-only to in-flight queue files; to drop a cell, comment
 it (don't delete) so indices stay stable, or start a fresh queue file for the remainder.
 
-> Universal gotchas (SSH drop on `pkill`, CRLF, cgroup OOM, silent sync, inode exhaustion on
-> many-small-files eval output across a shared FS) are **not** restated here — see
-> `references/run-remote/gotchas_universal.md`. Shared-FS inode pressure (principle #5) bites hardest exactly
-> during fan-out, when N cells write eval artifacts to one FS at once.
+> Shared-FS inode pressure (principle #5) bites hardest exactly during fan-out, when N cells write eval
+> artifacts to one FS at once — `references/run-remote/gotchas_universal.md` **U7**, **U25**.

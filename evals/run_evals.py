@@ -81,7 +81,7 @@ def main():
         for pr in problems:
             print(f"         - {pr}")
     print(f"\n{passed}/{passed + failed} cases reachable" + ("" if not failed else f"  ({failed} FAILED)"))
-    offline_failed = 0  # Windows SSH transport contract retired 2026-09-02 with the Windows machine
+    offline_failed = 0
     try:
         surface = runpy.run_path(str(CASES.parent / "test_instruction_surface.py"))
         offline_failed += int(surface["main"]())

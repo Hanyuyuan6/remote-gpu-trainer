@@ -23,18 +23,9 @@ records only the deltas, at the FAMILY level first, then a per-platform comparis
 
 > **Surface to the user up front (principle #10):** ⚠️ Danger clocks (per platform, §5) — a **stopped instance is auto-released** (Gpushare ~10 days, others vary) → data gone; **LanRui's 数据盘 bills while stopped**; Gpushare's **`/hy-tmp` is wiped 24 h after stop** and `/root` resets to the image. Conveniences — built-in **JupyterLab / TensorBoard** quick-tools (all four); **declare any custom port at rent time** ("高级选项") — it can't be opened later.
 
-**To jump:** `grep -in '<keyword>' profiles/china.md` (e.g. `proxy`, `ephemeral`, `bills`, `inode`, `LanRui`).
-
-## Table of contents
-1. LAUNCH · 2. STORAGE MODEL (survival matrix + `/root`-ephemeral trap) · 3. NETWORK (→ `references/run-remote/china-network.md`)
-· 4. SPOT/INTERRUPTION · 5. TEARDOWN/BILLING · 6. DAEMON TOOL · 7. TOP GOTCHAS (universal → `references/run-remote/gotchas_universal.md`)
-+ Platform-specific debugging · 8. SCRIPT OVERRIDES · 9. Per-platform comparison table
-
 > Universal gotchas (CRLF, cgroup OOM, silent sync, tmux-holds-script, disk-budget, secrets-off-shared-FS)
 > are NOT restated here — see `references/run-remote/gotchas_universal.md`. The mirror/proxy/download story is NOT
 > restated either — it is shared across all CN platforms and lives in `references/run-remote/china-network.md`.
-
----
 
 ## 1. LAUNCH
 
@@ -48,7 +39,7 @@ per-platform base-activation wrinkles (verified per-platform docs 2026-06):
   `work` workspace. Activate and run.
 - **Matpool** — ships a **`myconda` env that auto-activates on startup** (interpreter at
   `/root/miniconda3/envs/myconda/bin/python`). Run directly; no re-enable needed (verified matpool conda docs
-  2026-06 — this corrects the earlier "auto-activate off" note, which was true only for Gpushare).
+  2026-06).
 - **Gpushare** — ships miniconda but **base auto-activate is *disabled*** (`登陆终端默认取消了自动进入 base 环境`).
   Re-enable (`conda config --set auto_activate_base true`) or activate the named env per session
   (verified gpushare.com/docs/best_practices/conda 2026-06).
@@ -56,12 +47,10 @@ per-platform base-activation wrinkles (verified per-platform docs 2026-06):
 
 An unavoidable custom env goes **on the persistent disk** (`--prefix /<persistent-mount>/myenv`), never the
 small system disk (§2) — a system-disk env is wiped wherever `/root` is ephemeral. On Gpushare specifically,
-docs recommend `conda create -p /hy-netdisk/myenv` (NOT `/hy-tmp` — that auto-clears 24 h after shutdown, GS5).
+docs recommend `conda create -p /hy-netdisk/myenv`, never `/hy-tmp` (GS5).
 
 → **verify:** `ssh <alias> 'python -c "import torch;print(torch.cuda.is_available())"'` returns `True`
 against the *prebuilt* interpreter, before any install.
-
----
 
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*
 
@@ -109,9 +98,7 @@ HF/ModelScope caches off the small system disk → see `references/run-remote/ch
 
 State the checkpoint mount for §5's teardown verb: write to the **persistent netdisk/数据盘**, never `/root`.
 On Gpushare, also stage hot datasets to `/hy-tmp` (local SSD) for IO, but copy results back to `/hy-netdisk`
-before stopping — `/hy-tmp` is local AND auto-wiped 24 h after shutdown (GS5).
-
----
+before stopping (GS5).
 
 ## 3. NETWORK
 
@@ -126,11 +113,9 @@ differs and is recorded here (verified per-platform docs 2026-06):
   (a `turbo2.gpushare.com:<PORT>` backup host also exists). Two critical differences from AutoDL: (a) it is
   **per-session export**, NOT auto-sourced — re-run it in every new terminal/tmux pane; (b) it **whitelists
   only `*.github.com`, `*.github.io`, `*.githubusercontent.com`, `*.githubassets.com`, `*.huggingface.co`,
-  `*.pytorch.org`, `*.kaggle.com` and *restricts every other host*** — so
-  `unset http_proxy https_proxy` (or `unset http_proxy && unset https_proxy`) the moment the accelerated pull
-  finishes, or `pip`/`apt`/domestic mirrors mystery-fail (gotcha GS2). This is exactly the
-  `no_proxy`/route-specific trap in principle #7 — validate the speed test on the same route the real transfer
-  uses (verified gpushare.com/docs/instance/network_turbo 2026-06).
+  `*.pytorch.org`, `*.kaggle.com` and *restricts every other host*** — `unset http_proxy https_proxy` the
+  moment the accelerated pull finishes (GS2), and validate any speed test on the same route the real transfer
+  uses (principle #7). Verified gpushare.com/docs/instance/network_turbo 2026-06.
 - **Matpool** — no one-command egress proxy; ships source-switch scripts under `/public/script/`
   (`switch_conda_source.sh`, `switch_pip_source.sh`, `switch_apt_source.sh`). Fall back to mirrors
   (`references/run-remote/china-network.md`).
@@ -145,41 +130,27 @@ standard OpenSSH (scp/rsync work directly; no proxied-SSH `scp` limitation). San
 `ssh user@ssh.<region>.lanrui-ai.com -p <PORT> -i ~/.ssh/id_rsa` (LanRui — public-key must be uploaded to the
 console first).
 
----
-
 ## 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 
 **These are on-demand-only platforms — there is NO spot bid and NO documented mid-run reclaim.** Do not
 build SIGTERM-grace preemption handling here; aggressive retry-on-preemption is over-engineering on this
 family. The real involuntary-loss vectors are:
 
-1. **Auto-release of *stopped* instances.** Gpushare auto-releases (deletes, unrecoverable) a stopped
-   pay-as-you-go instance **10 days after stop** (`实例停止 10 天后，会自动释放` — verified
-   gpushare.com/docs/instance/manage 2026-06). On arrears, **at noon on the 15th day** Gpushare deletes
-   personal data + the `/hy-nas` shared storage + custom images. A stopped box is not a parked box — pull
-   anything needed off it before that window.
-2. **`/hy-tmp` 24-hour auto-clear (Gpushare).** Distinct from instance release: even on a *running* server,
-   `/hy-tmp` data is deleted **24 h after the instance is shut down**, and is also wiped on instance migration
-   (GS5).
-3. **GPU-idle auto-shutdown.** Most platforms offer an opt-in "idle → auto-stop" policy to prevent waste; if
-   enabled it can stop a job that merely went quiet (e.g. between epochs with no GPU util) — keep it off for
-   long single-GPU jobs unless heartbeat is guaranteed.
-4. **Platform churn (LanRui).** LanRui migrated domain `lanrui-ai.com` → **`lanrui.co`** (old-domain data not
-   retained after **2024-11-01**) and retired its **T1/T2 zones on 2025-06-30**, moving users to a new "Cova"
-   platform — **re-verify current console paths/domain before scripting against any cached LanRui path**.
+1. **Auto-release of *stopped* instances** — a stopped box is not a parked box (§7 GS4).
+2. **`/hy-tmp` 24-hour auto-clear (Gpushare)**, distinct from instance release and also triggered by
+   instance migration (§7 GS5).
+3. **GPU-idle auto-shutdown** stopping a job that merely went quiet between epochs (§7 CN2).
+4. **Platform churn (LanRui)** invalidating any cached domain or console path (§7 LR3).
 
 **Resume hook:** checkpoint-to-durable + load-latest-on-startup (principle #8) is still the right spine — here
 it guards against a forgotten stop, a 10-day auto-release, and a `/hy-tmp` 24 h wipe, not a spot kill. The
 cadence formula in `references/run-remote/spot-resilience.md` still applies if a job is long enough to span a forced stop.
 
----
-
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
 
-**The meter-stop verb is per-platform — bind it from the table below before clicking anything.** The Iron Law
-(SKILL.md Phase 5) holds unchanged: NO release/return/destroy until the canonical remote is restored into an
-independent temporary consumer, bytes/SHA-256 match, checkpoints safely load, full-prediction metrics
-recompute, and the user has approved the cost-affecting action. The consumer may be remote.
+**The meter-stop verb is per-platform — bind it from the table below before clicking anything.** NO
+释放 / 归还 / 销毁数据盘 and no file-delete until the teardown gate passes and the user has approved the
+cost-affecting action (teardown gate: `references/run-remote/lifecycle_checklist.md` Phase 5).
 
 | Platform | Meter-stop verb | What it preserves | Cost trap |
 |---|---|---|---|
@@ -188,21 +159,18 @@ recompute, and the user has approved the cost-affecting action. The consumer may
 | Featurize | **实例归还** (return) | only `work` (`/home/featurize`) + `/cloud` persist | everything else **wiped immediately on return** (FZ1) |
 | LanRui | **停止** stops compute; **must *销毁数据盘*** (destroy the 数据盘) to stop disk billing | 网盘 + 数据盘 persist | **数据盘 bills hourly while the workspace is merely STOPPED** (LR1) |
 
-**The single most dangerous divergence: on LanRui, "stop to save money" is wrong.** The 数据盘
+**The single most dangerous divergence: on LanRui, "stop to save money" is wrong** (LR1). The 数据盘
 (`/home/user/datadisk`, block storage, bought in 200 G / 500 G specs) bills hourly from *creation* until
-*destroyed*, even while the workspace is stopped — `工作空间停止运行，未销毁的数据盘也将持续计费` (verified
-docs.lanrui.co storage + lanrui.co/pricing 2026-06). So a stopped LanRui workspace keeps a meter running. To
-actually stop all billing: stop the workspace AND destroy the 数据盘 (after the Iron-Law restore+verify). The 网盘
-(10 GB free, 0.15 元/GB·月 overage) persists separately. Contrast: on Matpool/Gpushare/Featurize,
-release/return/归还 ends compute billing and the persistent volume simply survives (Gpushare /hy-netdisk and
-/hy-nas bill per-GB but are not destroyed by stopping).
+*destroyed*, so a stopped workspace keeps a meter running. To actually stop all billing: stop the workspace
+AND destroy the 数据盘, after the teardown gate. The 网盘 (10 GB free, 0.15 元/GB·月 overage) persists
+separately (verified docs.lanrui.co storage + lanrui.co/pricing 2026-06). Contrast: on
+Matpool/Gpushare/Featurize, release/return/归还 ends compute billing and the persistent volume simply
+survives (Gpushare `/hy-netdisk` and `/hy-nas` bill per-GB but are not destroyed by stopping).
 
 **Cost-pause analogs (cheaper than full release, data kept):** Gpushare **无卡模式 / 无卡启动** (low-core
 CPU-only restart, no GPU) is the analog of AutoDL's no-GPU restart — keeps `/hy-netdisk` data while paused at a
 fraction of the GPU rate, ideal for env-config + dataset download (verified gpushare 无卡启动 announcement
 2026-06). LanRui supports an **auto-stop timer** (set a stop time at workspace start) and per-hour billing.
-
----
 
 ## 6. DAEMON TOOL
 
@@ -216,8 +184,6 @@ tmux survives an **SSH drop** but **NOT** an instance **stop/restart** on any pl
 resets `/root`, taking the tmux server and any `/root` logs with it) — so the durable spine is
 checkpoint-to-persistent-disk (§2, principle #8), not the tmux session. LanRui additionally supports
 **multi-machine multi-GPU distributed training** — if used, see `references/run-remote/multinode.md`.
-
----
 
 ## 7. TOP GOTCHAS  *(platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)*
 
@@ -278,8 +244,7 @@ release 10 days after stop (`实例停止 10 天后自动释放`); on arrears, d
 `/hy-nas` + custom images (verified gpushare docs 2026-06). → Fix: pull results off a stopped box promptly;
 don't treat "stopped" as durable parking; keep the balance positive.
 
-**GS5 — `/hy-tmp` auto-cleared 24 h after shutdown (and on migration).** *(NEW — corrects the prior "/hy-tmp
-persists" assumption.)* Symptom: training data/scratch under `/hy-tmp` gone the day after a stop, even though
+**GS5 — `/hy-tmp` auto-cleared 24 h after shutdown (and on migration).** Symptom: training data/scratch under `/hy-tmp` gone the day after a stop, even though
 the instance still exists. → Root cause: `/hy-tmp` is per-server local scratch, auto-deleted 24 h after
 shutdown and wiped on instance migration (verified gpushare.com/docs/data/storage 2026-06). → Fix: treat
 `/hy-tmp` as IO scratch only; sync anything durable to `/hy-netdisk` before stopping; do NOT
@@ -299,8 +264,7 @@ cause: the Remote-SSH sync to the cloud drive is not always real-time, especiall
 → Fix: explicit `Ctrl+S`, then verify on the server (`ls -la` / `cat` the file) before trusting it; on a
 flaky connection, close and re-open the Remote-SSH session (transient failures are expected).
 
-**FZ3 — 30 GB free cloud quota silently breaks large writes / `conda create`.** *(corrects the prior "~20 GB"
-figure.)* Symptom: env creation or large copies into `work`/`/cloud` fail or truncate. → Root cause: the free
+**FZ3 — 30 GB free cloud quota silently breaks large writes / `conda create`.** Symptom: env creation or large copies into `work`/`/cloud` fail or truncate. → Root cause: the free
 cloud storage is **30 GB** (verified featurize.cn 2026-06); over it, writes fail. → Fix: `du -sh ~/work /cloud`
 to watch headroom; keep only the active env there; large reproducible scratch belongs on local
 non-persistent disk, not the cloud drive.
@@ -349,8 +313,6 @@ Before trusting a run, in Phase 0 (per platform):
   <session>` or `tail -f <persistent-mount>/run.log`. A vanished tmux server after a "restart" means `/root`
   reset (GS1) — the log must live on the persistent mount to survive.
 
----
-
 ## 8. SCRIPT OVERRIDES
 
 Parameterize the `scripts/` templates per platform. `PROXY_HOOK`, `HF_HOME`, and the mirror env all defer to
@@ -374,22 +336,10 @@ Common to all: the credential lives in an env var or `.netrc` on the **ephemeral
 shared/persistent netdisk (a shared `data` folder mounted into every same-zone workspace, like LanRui's, is
 especially leaky — universal secrets-off-shared-FS gotcha in `references/run-remote/gotchas_universal.md`).
 
----
+## 9. Per-platform comparison — porting an AutoDL workflow
 
-## 9. Per-platform comparison — the load-bearing differences at a glance
-
-The six questions the schema asks, answered per platform. This is the table to read first when picking which
-delta applies.
-
-| Question | Matpool | Gpushare | Featurize | LanRui |
-|---|---|---|---|---|
-| Prebuilt base-conda env? | yes (**`myconda`, auto-activated**) | yes (miniconda, base auto-activate **off**) | yes (full PyTorch/TF base, pip persists on `work`) | yes (image-provisioned; PyTorch images purchasable) |
-| Academic-acceleration proxy? | no (source-switch scripts only) | **yes** `turbo.gpushare.com:<PORT>` (per-session, 7-host whitelist) | no (mirrors only) | no (mirrors only) |
-| Shared / region FS? | `/mnt` netdisk (**region-scoped**, expandable) | `/hy-netdisk` (only on *marked* machines) + `/hy-nas` | `work`+`/cloud` (cloud sync; not cross-region, med-conf) | `/home/user/netdisk/data` (shared into *every same-zone* workspace) |
-| Inode cap? | undocumented — measure `df -i` | undocumented — measure `df -i` | undocumented — measure `df -i` | undocumented — measure `df -i` |
-| Data disk bills while **stopped**? | no (release ends billing) | no (but stopped box auto-released at 10 d; `/hy-tmp` cleared 24 h) | no (return ends billing) | **YES — 数据盘 bills until destroyed** |
-| Meter-stop verb | 停止并释放 | 关机 → 释放 (+ 无卡模式 pause) | 实例归还 | **停止 + 销毁数据盘** |
-| `/root` survives a stop? | local, lost on release | **NO — resets to image** | **NO — wiped on return** | system disk lost; use 数据盘 |
+The per-platform answers live in the sections that own them: base env §1, mounts and survival §2, proxy §3,
+meter-stop verb and billing §5. What does not live anywhere else is which of them you must re-bind.
 
 **Bottom line for porting an AutoDL workflow:** the SSH/tmux/smoke/checkpoint spine transfers verbatim; the
 three things to re-bind per platform are (1) the **persistent mount** (never `/root`; on Gpushare never

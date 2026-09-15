@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create an empty canonical software-run directory scaffold.
 
-The scaffold follows the artifact layout owned by ``research-artifact-hygiene``::
+The scaffold follows the canonical artifact layout in ``references/run-remote/artifact-layout.md``::
 
     runs/<run-id>/test/<test-id>/vis/<condition-id>/<task-native-role>/
 

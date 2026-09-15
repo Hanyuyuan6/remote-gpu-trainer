@@ -23,20 +23,6 @@ NOT repeated here — see `references/run-remote/gotchas_universal.md`.
 
 > **Surface to the user up front (principle #10):** ⚠️ Danger clocks — an **auto-shutdown timer ends every Notebook/Core run** (set it consciously; Gradient free notebooks hard-cap at 6 h); **snapshots / block storage keep billing after a machine is destroyed** (orphan bleed). Heads-up — the **Gradient CLI/API was deprecated 15 Jul 2024** (pin `gradient<3.0`; the three-CLI mess, §1).
 
-To jump: `grep -in '<keyword>' profiles/paperspace.md`.
-
-## Table of contents
-1. LAUNCH — Gradient vs Core, the env contract, the three-CLI mess
-2. STORAGE MODEL — survival matrix, the stop-keeps-disk rule, pip-doesn't-persist
-3. NETWORK — public IP (static vs dynamic), ports, SSH flavor
-4. SPOT / INTERRUPTION + RESUME — the auto-shutdown clock, not spot
-5. TEARDOWN / BILLING — what actually stops the meter (the trap)
-6. DAEMON TOOL — tmux on Core; why Notebooks resist a daemon
-7. TOP GOTCHAS — `PS1`–`PS13`, platform-pinned + platform-specific debugging
-8. SCRIPT OVERRIDES — values for the `scripts/` templates
-
----
-
 ## 1. LAUNCH
 
 Two product families, with opposite operating models:
@@ -58,8 +44,8 @@ durable analog of the env is a Docker image plus a `requirements.txt`/lock file 
 reproduces it. **On Notebooks, a plain `pip install` does NOT survive a restart** (writes to
 `/usr/local/lib`, ephemeral) — see §2 / `PS3`.
 
-**The three-CLI mess (gates ALL automation).** The tooling fragmented across the DigitalOcean acquisition;
-the draft's "migrate to the current API/CLI" understates the trap (verified github.com/Paperspace 2026-06):
+**The three-CLI mess (gates ALL automation).** The tooling fragmented across the DigitalOcean acquisition
+(verified github.com/Paperspace 2026-06):
 - The **legacy Gradient REST API endpoints were deprecated 15 Jul 2024** — stale calls 404 or no-op.
 - **`gradient-cli` v2 is deprecated**; pin `pip install "gradient<3.0"` only to keep *old* scripts alive.
 - **`gradient-python` (github.com/digitalocean/gradient-python) is NOT the orchestration CLI** — it is the
@@ -71,8 +57,6 @@ the draft's "migrate to the current API/CLI" understates the trap (verified gith
 
 → **verify:** `ssh <core-alias> 'python -c "import torch;print(torch.cuda.is_available())"'` on Core, or a
 `print(torch.cuda.is_available())` cell in a Notebook.
-
----
 
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*
 
@@ -105,8 +89,6 @@ cross-delete-of-the-notebook) — `/notebooks` dies if the notebook itself is de
 disk survives a stop, but a *destroy* wipes it, so the Iron-Law independent-consumer restore before destroy applies.
 No documented inode cap on either tier; still monitor `df -i` (universal, U7 / principle #5).
 
----
-
 ## 3. NETWORK
 
 - **Egress.** Direct and unproxied to HF/GitHub/PyPI; no `network_turbo`-style accelerator and no
@@ -131,8 +113,6 @@ No documented inode cap on either tier; still monitor `df -i` (universal, U7 / p
 - **SSH flavor.** Core = a standard Linux VM → full `ssh`/`scp`/`rsync` (ML-in-a-Box default user
   `paperspace`). Gradient Notebooks expose a **Jupyter sandbox**, not a clean persistent SSH daemon —
   there is no stable SSH-daemon story for a multi-day unattended run on a Notebook.
-
----
 
 ## 4. SPOT / INTERRUPTION + RESUME  *(principle #7/#8)*
 
@@ -163,8 +143,6 @@ different in kind and BOTH are deterministic, not random eviction:
    load-latest-on-startup spine (principle #8) is what makes the restart idempotent. Young/Daly cadence
    formula → `references/run-remote/spot-resilience.md`.
 
----
-
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law — the most error-prone section)*
 
 Per-hour billing (verified DO products/paperspace/pricing 2026-06). **A shut-down/power-off STOPS the
@@ -191,14 +169,11 @@ meter.**
 no stop), but unlike AutoDL's 关机 the **storage + IP + snapshots keep billing** until each is explicitly
 destroyed/released. "Stopped" ≠ "free."
 
-> **Iron Law (teardown gate):** NO destroy/delete of the machine, release of the IP, or deletion of
-> `/storage`/block-storage/snapshot until the canonical remote is restored into an independent temporary
-> consumer, bytes/SHA-256 match, the checkpoint safely loads, full-prediction metrics recompute, and the user
-> has **explicitly approved** the specific cost-affecting action. The consumer may be remote. A destroy is irreversible — "it
-> looked done in the log" is not evidence (principle #3). General form →
-> `superpowers:verification-before-completion`.
-
----
+> **Teardown Iron Law — Paperspace clause.** NO `destroy`/`delete` of the machine, release of the IP, or
+> deletion of `/storage`/block-storage/snapshot until the teardown gate passes and the user has
+> **explicitly approved** the specific cost-affecting action (teardown gate:
+> `references/run-remote/lifecycle_checklist.md` Phase 5). A destroy is irreversible. If a separate
+> verification-before-completion skill is installed, invoke it; otherwise stop before release.
 
 ## 6. DAEMON TOOL
 
@@ -214,8 +189,6 @@ destroyed/released. "Stopped" ≠ "free."
   serving). For training-as-a-daemon, prefer **Core + tmux**; treat Notebooks as interactive/short-run only.
 
 If `tmux` is absent on a minimal image, fall back to `nohup <cmd> </dev/null >log 2>&1 &`.
-
----
 
 ## 7. TOP GOTCHAS  (platform-pinned; universal ones → `references/run-remote/gotchas_universal.md`)
 
@@ -314,26 +287,26 @@ If `tmux` is absent on a minimal image, fall back to `nohup <cmd> </dev/null >lo
   Fix: pin the image by digest (`@sha256:`) and supply registry creds as a Gradient **secret**, not inline.
   General form → U30 in `references/run-remote/gotchas_universal.md`.
 
-- **PS13 — Platform-specific debugging.** Commands + what to check (Core uses standard Linux tooling; the
-  Notebook-only items are the platform delta):
-  - **Confirm GPU + driver/torch match:** `nvidia-smi` (driver/CUDA version) then
-    `python -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"` —
-    a mismatch here is `PS11`/U28, not a code bug.
-  - **Find what is eating the 5 GB / over-allowance `/storage` (the platform's own recommended cmd):**
-    `du -sch .[!.]* * | sort -h` (or `!du -sch …` in a cell); install `ncdu` for an interactive view
-    (verified DO notebooks/how-to/manage-storage 2026-06). Check `df -h` AND `df -i` (inodes, U7).
-  - **Is a Notebook write durable?** `df -h /storage /notebooks` and confirm the target is one of those two
-    mounts — anything else (incl. `/usr/local/lib`) is ephemeral (`PS3`).
-  - **Why did the run vanish?** Walk the universal ladder (U3): `dmesg | grep -iE 'killed process|out of
-    memory'` (OOM?), `uptime` (recent reboot = auto-shutdown fired, `PS2`), `nvidia-smi` (GPU idle = died,
-    not hung). A round-number `uptime`-near-window with a clean `dmesg` ⇒ auto-shutdown, not a crash.
-  - **Detect a stuck/slow download:** watch the target file size grow
-    (`watch -n5 'ls -l /storage/<file>'`); a flat size with a live process = stalled wire (U12 resumable
-    loop). Egress is direct/unproxied here, so a stall is route/peer, not a missing proxy hook.
-  - **Audit orphaned billables before declaring teardown done:** in the console (or `pspace`) list
-    machines, **public IPs**, **storage/volumes**, and **snapshots** — `PS1`/`PS9` hide in the last two.
+### Platform-specific debugging
 
----
+Core uses standard Linux tooling; the Notebook-only items are the platform delta.
+
+- **Confirm GPU + driver/torch match:** `nvidia-smi` (driver/CUDA version) then
+  `python -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"` —
+  a mismatch here is `PS11`/U28, not a code bug.
+- **Find what is eating the 5 GB / over-allowance `/storage` (the platform's own recommended cmd):**
+  `du -sch .[!.]* * | sort -h` (or `!du -sch …` in a cell); install `ncdu` for an interactive view
+  (verified DO notebooks/how-to/manage-storage 2026-06). Check `df -h` AND `df -i` (inodes, U7).
+- **Is a Notebook write durable?** `df -h /storage /notebooks` and confirm the target is one of those two
+  mounts — anything else (incl. `/usr/local/lib`) is ephemeral (`PS3`).
+- **Why did the run vanish?** Walk the universal ladder (U3): `dmesg | grep -iE 'killed process|out of
+  memory'` (OOM?), `uptime` (recent reboot = auto-shutdown fired, `PS2`), `nvidia-smi` (GPU idle = died,
+  not hung). A round-number `uptime`-near-window with a clean `dmesg` ⇒ auto-shutdown, not a crash.
+- **Detect a stuck/slow download:** watch the target file size grow
+  (`watch -n5 'ls -l /storage/<file>'`); a flat size with a live process = stalled wire (U12 resumable
+  loop). Egress is direct/unproxied here, so a stall is route/peer, not a missing proxy hook.
+- **Audit orphaned billables before declaring teardown done:** in the console (or `pspace`) list
+  machines, **public IPs**, **storage/volumes**, and **snapshots** — `PS1`/`PS9` hide in the last two.
 
 ## 8. SCRIPT OVERRIDES
 

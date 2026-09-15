@@ -1,11 +1,8 @@
 # Getting better over time — capture new gotchas + personalize (without corrupting the skill)
 
-This skill is a static reference, so it does **not** evolve on its own. But every real run teaches
-something — a new platform quirk, a training bug not in the catalog, or the user's own setup. This file
-is the protocol for **sedimenting that knowledge in the right place, at the right bar, without silently
-rewriting the skill**. Apply it whenever a run surfaces something the catalog did not already cover.
-
-To jump: `grep -in '<keyword>' references/self-improvement.md`.
+Every real run teaches something — a platform quirk, a training bug not in the catalog, the user's own
+setup. This is the protocol for sedimenting it in the right place, at the right bar, without silently
+rewriting the skill.
 
 ## Table of contents
 1. The bar — what qualifies as a keepable gotcha

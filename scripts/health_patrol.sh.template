@@ -126,7 +126,7 @@ if [ "${ALIVE:-0}" -eq 0 ] 2>/dev/null && [ "${N_TOTAL:-0}" -gt 0 ] && [ "${DONE
 fi
 
 if [ "$esc" -eq 1 ]; then
-  finish alert "$reasons" "PATROL: 崩了 — ${why}. Read only the relevant per-run failure evidence; do NOT blind-restart."
+  finish alert "$reasons" "PATROL: CRASHED — ${why}. Read only the relevant per-run failure evidence; do NOT blind-restart."
   exit $?
 fi
 if [ "$N_TOTAL" -gt 0 ] && [ "$DONE" -ge "$N_TOTAL" ] && [ "$ALIVE" -eq 0 ]; then

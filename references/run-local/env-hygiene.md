@@ -3,10 +3,6 @@
 The one rule this file enforces: **on a workstation you own and keep, a DL train/install command runs in a
 named, project-pinned environment — never in conda `base`.** `base` is the interpreter that powers conda
 itself; treating it as a project env is how a single `pip install` ABI-rots every other project on the box.
-This file is self-contained — it states the rules, not a pointer to some external policy.
-
-To jump: `grep -in '<keyword>' references/run-local/env-hygiene.md` (e.g. `base`, `enumerate`, `activate`,
-`executable`, `rental`, `create`).
 
 ## Table of contents
 
@@ -14,8 +10,6 @@ To jump: `grep -in '<keyword>' references/run-local/env-hygiene.md` (e.g. `base`
 - **Doing it** — E3 enumerate envs · E4 pick the project env (or ask) · E5 confirm activation · E6 no env → create one
 - **The exception** — E7 remote / ephemeral rentals: `base` is fine there
 - **Pointers** — launch/detach → launch.md · the seed/determinism contract → ../verifying/methodology.md
-
----
 
 ## The rule
 
@@ -51,8 +45,6 @@ Read-only probes are **exempt** — a `python -c "import torch; print(torch.__ve
 > If step 2 is ambiguous (several plausible envs, or none obviously the project's), **ask the human which
 > env** — do not silently fall back to `base`. Falling back to `base` is the exact failure this file exists
 > to prevent.
-
----
 
 ## Doing it
 
@@ -135,8 +127,6 @@ pip install -r requirements.txt          # or: conda env create -f environment.y
 If the repo ships `environment.yml`, prefer `conda env create -f environment.yml` (it names and pins the env
 in one step). One env per project, pinned — never the shared `base`.
 
----
-
 ## The exception
 
 ### E7 — Remote / ephemeral RENTAL: running in `base` is fine (and usually correct)
@@ -163,9 +153,7 @@ The rest of the discipline (resource awareness, artifact/checkpoint handling, st
 on a rental — only the *env-isolation* requirement is relaxed, because the isolation a fresh env buys is
 already provided by the instance's disposability.
 
----
-
-## Pointers — handled elsewhere, do not restate
+## Pointers — handled elsewhere
 
 - **Launching & detaching** the run once the env is confirmed → `references/run-local/launch.md`.
 - **Single-node multi-GPU** (`torchrun`/`accelerate` env contract) → `references/run-local/multi-gpu.md`.

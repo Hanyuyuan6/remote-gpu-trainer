@@ -1,13 +1,9 @@
 # Launching & detaching a local single-GPU run — nohup / tmux, log + alive probe, don't block
 
-Start one training run on a workstation you own, **detach it from the terminal** so closing the shell
-doesn't kill it, send its output to a file you can tail, and confirm it is alive **without blocking on it**.
-This file owns *making a local run start, survive the shell, and be observable*; whether the resulting number
-is correct is `references/verifying/methodology.md`, and fitting a model that OOMs is
+This file owns making a local run **start, survive the shell, and be observable** — detached from the
+terminal, logging to a file you can tail, with an alive probe that doesn't block; whether the resulting
+number is correct is `references/verifying/methodology.md`, and fitting a model that OOMs is
 `references/run-local/local-oom.md`.
-
-To jump: `grep -in '<keyword>' references/run-local/launch.md` (e.g. `nohup`, `tmux`, `disown`, `tail`,
-`pgrep`, `alive`, `CUDA_VISIBLE`, `stdbuf`).
 
 ## Table of contents
 
@@ -15,8 +11,6 @@ To jump: `grep -in '<keyword>' references/run-local/launch.md` (e.g. `nohup`, `t
 - **Detach** — L3 tmux (interactive) · L4 nohup (headless) · L5 redirect stdin from /dev/null
 - **Observe without blocking** — L6 log to a file + tail · L7 the alive probe (process + GPU + log mtime) · L8 don't foreground-wait
 - **Pointers** — multi-GPU → multi-gpu.md · OOM → local-oom.md · resume spine → ../run-remote/spot-resilience.md
-
----
 
 ## Pre-flight
 
@@ -53,8 +47,6 @@ CUDA_VISIBLE_DEVICES=1 python train.py ...                              # pin to
 ```
 The process sees only the listed device(s) as `cuda:0…`. For a true single-GPU run, list exactly one index.
 (Splitting *one* job across several cards is `references/run-local/multi-gpu.md`, not this.)
-
----
 
 ## Detach — sever the run from the terminal
 
@@ -114,8 +106,6 @@ won't fully detach.
 **Fix**: always redirect **all three**: `</dev/null >run.log 2>&1`. `</dev/null` guarantees the job never
 blocks or gets stopped reading a terminal that may go away. This is why the L4 line leads with `</dev/null`.
 
----
-
 ## Observe without blocking
 
 ### L6 — Log to a file and tail it (and disable output buffering)
@@ -169,9 +159,7 @@ tail), not to a foreground wait. A dropped *poll* connection is not the run dyin
 concluding anything. For an agent driving this, the same rule holds: kick off the detached run, then return
 and check on it; do not hold the turn open waiting on training.
 
----
-
-## Pointers — handled elsewhere, do not restate
+## Pointers — handled elsewhere
 
 - **Splitting one job across multiple local GPUs** (`torchrun`/`accelerate`, the rank env, DDP hangs) →
   `references/run-local/multi-gpu.md`.

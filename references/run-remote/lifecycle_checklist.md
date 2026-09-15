@@ -1,30 +1,11 @@
-# Lifecycle Checklist — the 6-phase runbook as a per-platform checklist
+# Lifecycle Checklist — the per-platform runbook
 
-Purpose: a platform-parameterized, copy-pasteable checkbox runbook for one remote-GPU job, Phase 0
-(environment audit) through Phase 5 (aggregate + verify + teardown). Substrate is delegated to **your
-platform profile** (`profiles/<platform>.md`, 8-section schema in `profiles/_schema.md`) — this file never
-hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `SKILL.md`.
-
-`grep -in <keyword> references/run-remote/lifecycle_checklist.md` to jump.
-
-## Table of contents
-- Phase −1 — one-time setup (skip if reused)
-- Phase 0 — environment audit
-- Phase 1 — SSH + credentials
-- Phase 2 — wrapper + CPU-smoke gate
-- Phase 3 — detached launch
-- Phase 4 — durable monitoring
-- Phase 5 — aggregate + verify + teardown
-- Cost-saving teardown table
-- Failure handling (inline, any phase)
-
-> **How to use:** pick the profile FIRST (`SKILL.md` → "Pick your platform profile"). Wherever a step
-> says *profile data mount* / *profile durable mount* / *profile meter-stop verb* / *profile detach
-> primitive*, read the literal value out of that profile's STORAGE / TEARDOWN / DAEMON sections. Skip any
-> phase already done. Universal gotchas referenced by id live in `references/run-remote/gotchas_universal.md` — not
-> restated here.
-
----
+A copy-pasteable checkbox runbook for one remote-GPU job — six phases (0–5), each closed by its
+`> **verify:**` line, plus an optional one-time Phase −1 — parameterized by your platform profile
+(`profiles/<platform>.md`, 8-section schema in `profiles/_schema.md`): pick the profile first
+(`SKILL.md` → RUN → Rented or shared machine), read *profile data mount* / *profile durable mount* /
+*profile meter-stop verb* / *profile detach primitive* literally out of its STORAGE / TEARDOWN / DAEMON
+sections, and skip any phase already done.
 
 ## Phase −1 — One-time setup *(skip if reused from a past project)*
 
@@ -38,8 +19,6 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 - [ ] `.gitattributes` sets `*.sh text eol=lf` so Windows-authored scripts don't ship CRLF (gotcha U26).
 
 > **verify:** `ssh <alias> 'echo reachable'` returns `reachable` and the durable mount appears in the profile's survival matrix.
-
----
 
 ## Phase 0 — Environment audit
 
@@ -59,8 +38,6 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 
 > **verify:** `nvidia-smi` shows the expected GPU and `df -i <profile data mount>` is not near 100%.
 
----
-
 ## Phase 1 — SSH + credentials
 
 - [ ] Set the SSH alias/env per the profile's NETWORK section; note the SSH flavor (a proxied/basic SSH may not `scp`/`rsync` — direct-TCP required; ports may change on restart).
@@ -69,8 +46,6 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 - [ ] If the profile sits behind the GFW, wire the China-mirror endpoint now (`references/run-remote/china-network.md`); validate the speed test on the SAME route the real transfer uses (principle #7).
 
 > **verify:** `ssh <alias> 'python -c "import torch;print(torch.cuda.is_available())"'` prints `True`.
-
----
 
 ## Phase 2 — Wrapper + CPU-smoke gate
 
@@ -82,13 +57,11 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
   `active/<run-id>`; cache resolves to the profile's `cache/`. A legacy `DURABLE_DIR/final_ckpts` copy is
   staging, not a closed export, and must never target `export/<run-id>`.
 - [ ] Wrappers are resumable: load-latest-on-startup unconditionally so the identical launch command resumes, not restarts (principle #8).
-- [ ] Bound checkpoint retention to the selection best + resume anchor (`save_top_k <= 3` by default).
+- [ ] Bound checkpoint retention per `references/run-remote/artifact-layout.md` (`active/<run-id>`).
 - [ ] Build the per-cell queue/config files with one isolated write path per cell (no shared mutable output — parallel ablation needs this; `references/run-remote/parallel_ablation.md`).
 - [ ] **Run the cheap CPU smoke LOCALLY, BEFORE renting** — 1–2 batches, logger disabled, tiny shapes; it kills import/config/shape/scale bugs for ~free (principle #2). Smoke *content* → **references/verifying/methodology.md** (REQUIRED).
 
 > **verify:** smoke exits 0 on 2 batches with the logger disabled, no Traceback.
-
----
 
 ## Phase 3 — Detached launch
 
@@ -96,64 +69,29 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 - [ ] Push code/data with a resumable transfer (`rsync --partial` or `timeout`+resume loop — principle #7),
   verify them against the bound source/data identities, then launch. Never edit a script under a live
   run—version filenames (principle #6).
-- [ ] Probe briefly: log head + process alive + no traceback, then **hand control back**. Never a blocking foreground `sleep` (foreground Bash hard-caps at 600 s on Claude Code; other hosts have their own turn limit — `monitoring_patterns.md` §7).
+- [ ] Probe briefly: log head + process alive + no traceback, then **hand control back**. Never a blocking foreground `sleep` (the foreground turn limit is host-specific — `references/run-remote/monitoring_patterns.md` §7).
 
 > **verify:** within 60 s, the detach session is alive and the first log line shows the expected step/epoch.
-
----
 
 ## Phase 4 — Durable monitoring
 
 - [ ] For anything over ~1–2 h, deploy the **four-layer architecture** (`references/run-remote/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels + recovery handbook. A session-bound watcher alone dies with the session (principle #3).
-- [ ] Use `run_in_background` (no duration cap, notifies on exit; a Claude Code primitive — other hosts map per `monitoring_patterns.md` §7) for long waits; never foreground-poll. NEVER an unquoted `|` inside a poll-regex — it reads stdin and hangs forever.
+- [ ] Use a bounded background waiter that exits and notifies (Claude Code: `run_in_background`; other hosts map per `references/run-remote/monitoring_patterns.md` §7) for long waits; never foreground-poll. NEVER an unquoted `|` inside a poll-regex (see `references/run-remote/monitoring_patterns.md` §0, fact 4).
 - [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure).
 - [ ] Reconcile each watcher against the job's REAL process/artifact (`tmux ls`/`squeue`/`pgrep` + output `mtime`) — a watcher's own state is a claim, not ground truth (principle #3). Tear a watcher down when its job is superseded.
 - [ ] Classify each failure → its fixed remediation (see Failure handling below); **never blind-retry**.
 
 > **verify:** the patrol reports a status line even when nothing changed (proves it's alive, not silently dead).
 
----
-
 ## Phase 5 — Aggregate + verify + teardown
 
-- [ ] Build the complete candidate under `export/.partial/<run-id>`. Require `run.json`, `config.yaml`,
-  `train.csv`, `best.pth`, and for every declared test
-  `test/<test-id>/{metrics.json,results.parquet,vis/}`; allow only a frozen optional `last.pth`. For every
-  declared software test, require complete declared conditions × task-native roles × K coverage
-  at `test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`, where
-  K = `min(100, N_test)`. Do not add `latest.pth`, redundant
-  `COMPLETE.json`/`MANIFEST.json` status sentinels, dataset bytes, top-level `config/`/`results/`/`vis/`,
-  caches, general logs, full tracker state, or a default montage.
-- [ ] Bind each versioned per-test-set `selection_id` and its one manifest path/hash in `run.json`. Preserve
-  schema-2 `all`/`fixed_model_blind` under `_trust/selections/`. For schema 3, accept a safe project-relative
-  manifest only when it binds MNIST test K=512 clean float32, the exact ranking model/config/checkpoint, and
-  the complete unrounded reconstruction-PSNR source hash/population; enforce descending PSNR, sample-ID tie
-  order, K=`min(100,N_test)`, and one ordered roster across all methods, conditions, and three tasks. Keep
-  full-test metrics full-population, restrict the ranked roster to qualitative examples, and give no-GT
-  tests a separate explicit non-PSNR roster. Do not embed a second manifest or legacy visualization index.
-- [ ] Never place real capture/hardware results inside software `export/<run-id>`. If this compute produced
-  hardware output, hand capture/decode/model-run bindings to `research-artifact-hygiene` or build an
-  independent `export/.partial/hardware/<hardware-run-id>` capsule containing `run.json` plus mandatory
-  `test/<test-id>/{metrics.json,results.parquet,vis/...}`. Its `run.json` references capture/decode/model-run
-  identities and `best.pth` hash; it contains no copied weights. The linked model run must have the same task.
-  Ground-truth-available tests use full-test metrics and complete task roles. Tests with explicit
-  `ground_truth_status=unavailable_no_machine_readable_gt` pair it with
-  `metric_applicability=not_applicable`, finite-forward rows, and prediction-only roles; they never fabricate
-  ground truth or accuracy/AP/IoU. Validate and atomically rename the capsule to
-  `export/hardware/<hardware-run-id>` with complete applicable conditions × roles × K vis coverage.
-- [ ] Do not repack an established project-native `checkpoints/<legacy-id>` tree merely to pass this phase.
-  Route it to `supervise-research-closeout` for read-only legacy acceptance, and apply this export contract
-  only to newly closed outputs.
-- [ ] Validate the capsule contract owned by `research-artifact-hygiene`, including safe checkpoint load,
-  exact canonical keys and required paths/visual coverage. `run.json` must contain no redundant full-file
-  roster. After remote custody is verified, the author tree may retain a thin logical `runs/<run-id>` whose
+- [ ] Build and validate the capsule exactly per `references/run-remote/artifact-layout.md` — the
+  `export/<run-id>` contract, the separate hardware capsule, the versioned per-test-set selection manifest,
+  legacy project-native trees, and the `export/.partial/<run-id>` → `export/<run-id>` atomic closeout.
+  Quarantine the failed partial on any failure; never overwrite a sealed export.
+- [ ] After remote custody is verified, the author tree may retain a thin logical `runs/<run-id>` whose
   checkpoint/results records carry URI, SHA-256, bytes, provider, mutability, verification date, and
   independent consumer evidence; it need not retain a Mac `.pth`.
-  If the destination does not exist, atomically rename `export/.partial/<run-id>` to `export/<run-id>` on
-  the same filesystem.
-- [ ] On any closeout failure, preserve the failed partial under `quarantine/<run-id>--<attempt-id>` with
-  the failure reason. Never overwrite a sealed export and never delete the failed attempt without explicit
-  authorization.
 - [ ] For every shared-filesystem, local, Hugging Face, or other durable replica, stop here and invoke the
   generic `mirror-research-artifacts` skill on validated `export/<run-id>`. It owns destination/privacy
   checks, the external frozen manifest and live exact-roster/byte/hash validation, transfer,
@@ -189,8 +127,6 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
 > general form may be reinforced by a separate verification-before-completion companion when installed;
 > the bundled manifest gate remains mandatory and self-contained.
 
----
-
 ## Cost-saving teardown table
 
 The verb that stops the meter, what each preserves, and irreversibility — bind the platform-specific verb
@@ -211,8 +147,6 @@ artifacts pass independent-consumer restore and semantic verification). Keep dur
 until the paper is submitted. Cancel the durable subscription LAST, only after that verification and the
 user's explicit approval.
 
----
-
 ## Failure handling *(inline, any phase)*
 
 Categorize before reacting; retry the **identical** config — hand-patching one run destroys comparability
@@ -222,5 +156,4 @@ Categorize before reacting; retry the **identical** config — hand-patching one
 - [ ] **Disk pressure/full** (>=90%, below frozen floor, `iostream`, inode/full): stop new writers; audit the resolved mount and live writers; reclaim only allowlisted proven-regenerable task scratch with a receipt; mirror valuable portable outputs and restore/semantic-verify before cleanup eligibility; remeasure. If still short, report exact shortfall, expansion target and restart requirement. Never silently shrink the experiment or delete active/unknown/research-bearing paths (principle #9). Then retry once only when the root cause is closed.
 - [ ] **Real bug** (CUDA OOM, code error, all-zero metric): stop, investigate code — do NOT retry blindly.
 
-> Symptom → root cause → fix for each, plus the full catalog: `references/run-remote/gotchas_universal.md`
-> (`grep -in <keyword> references/run-remote/gotchas_universal.md` to jump).
+> Symptom → root cause → fix for each, plus the full catalog: `references/run-remote/gotchas_universal.md`.

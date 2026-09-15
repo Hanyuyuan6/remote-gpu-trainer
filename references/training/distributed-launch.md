@@ -1,20 +1,8 @@
-> Applies to both local and remote runs.
-
 # Launching & debugging multi-GPU / multi-node training — torchrun · Accelerate · DeepSpeed · DDP · FSDP
 
-Pick a launcher, get the rank/world-size env right, choose a parallelism (DDP vs FSDP vs ZeRO),
-and — when 8 processes silently freeze — find *which* rank diverged. This layer owns *making the
-distributed job RUN, not hang, and not silently mis-shard*; **references/verifying/methodology.md** owns *is the
-resulting number correct* (a run whose LR silently rescaled with world size, or that resumed from
-step 0 after a restart, is its concern). Cross-link it (**REQUIRED**) wherever a launch fix changes
-effective batch size, LR, or precision.
-
-Single box, multiple GPUs is DDP/FSDP over NVLink/PCIe and lives here. The **inter-node** transport
-(NCCL NIC, fabric-manager, timeout, MTU, elastic restart) is `references/run-remote/multinode.md` (**REQUIRED**
-for any job spanning ≥2 instances) — this file ends where the wire between boxes begins.
-
-To jump: `grep -in '<keyword>' references/training/distributed-launch.md` (e.g. `rdzv`, `local_rank`,
-`unused`, `hang`, `desync`, `fsdp`, `zero`, `state_dict`, `port`, `barrier`, `accelerate`).
+This layer owns making the distributed job RUN, not hang, and not silently mis-shard; the **inter-node**
+transport (NCCL NIC, fabric-manager, timeout, MTU, elastic restart) is `references/run-remote/multinode.md`
+(**REQUIRED** for any job spanning ≥2 instances).
 
 ## Table of contents
 
@@ -22,11 +10,9 @@ To jump: `grep -in '<keyword>' references/training/distributed-launch.md` (e.g. 
 - **DDP** — D8 find_unused_parameters · D9 uneven-inputs-Join · D10 SyncBN-&-buffers · D11 effective-batch/LR
 - **FSDP** — D12 wrapping-policy · D13 sharding-strategy · D14 mixed-precision · D15 state_dict-type
 - **DeepSpeed** — D16 ZeRO-stages · D17 config.json-knobs · D18 auto-&-engine.backward
-- **Tensor & 2-D parallel (DeviceMesh)** — D24 slice-mesh-to-1D · D25 mesh×world / divide-heads · D26 TP-intra-node
 - **The HANGS** (highest-value) — D19 desync-debug-toolkit · D20 one-rank-diverged · D21 rank-conditional-collective · D22 dataloader-length-mismatch · D23 eval/print/save-on-one-rank
+- **Tensor & 2-D parallel (DeviceMesh)** — D24 slice-mesh-to-1D · D25 mesh×world / divide-heads · D26 TP-intra-node
 - **Pointers** — inter-node NCCL/NIC/timeout → multinode.md · OOM/sharding-to-fit → oom-memory.md · spot-restart → spot-resilience.md
-
----
 
 ## Launchers & env
 
@@ -140,12 +126,10 @@ via `--config_file` and let it spawn the workers — don't mix both launchers.
 ### D7 — Which launcher / parallelism — decision in one breath
 
 - **Model fits on one GPU, just want more throughput** → **DDP** (`torchrun`), simplest, fastest. Each rank holds a full replica.
-- **Model does NOT fit (params+optim+grads ≈ 18 B/param, see oom-memory.md M1)** → shard it: **FSDP** (PyTorch-native) or **DeepSpeed ZeRO** (richer offload). Sharding-to-fit ladder → `references/training/oom-memory.md` M9.
+- **Model does NOT fit (params+optim+grads ≈ 18 B/param, see `references/training/oom-memory.md` M1)** → shard it: **FSDP** (PyTorch-native) or **DeepSpeed ZeRO** (richer offload). Sharding-to-fit ladder → `references/training/oom-memory.md` M9.
 - **HF ecosystem / Trainer** → **Accelerate** as the launcher; flip a config field to choose DDP/FSDP/ZeRO.
 - **Need CPU/NVMe offload of params *and* optimizer separately, or ZeRO-Infinity** → **DeepSpeed** (FSDP**1** offload is all-or-nothing; FSDP2/`fully_shard` is finer-grained; [HF concept guide](https://github.com/huggingface/accelerate/blob/main/docs/source/concept_guides/fsdp_and_deepspeed.md)).
 - **A single layer / activation is too big even when sharded (huge hidden or vocab), or you want to scale past data-parallel limits** → **Tensor Parallel + 2-D DeviceMesh** (compose TP with FSDP2) → D24–D26 below.
-
----
 
 ## DDP
 
@@ -176,13 +160,14 @@ pads (`drop_last=False`) or drops (`drop_last=True`) to equalize, but a custom s
 filter, or a `IterableDataset` can leave counts uneven — the short rank stops calling allreduce.
 
 **Fix**:
-- Use `DistributedSampler` (it equalizes by default) and set the **same** `drop_last` on every rank.
+- Use `DistributedSampler` (it equalizes by default) with the **same** `batch_size`, `drop_last`, and
+  sampler on every rank.
 - Truly uneven inputs (variable-length, can't pad): wrap the loop in the **Join** context manager —
   `from torch.distributed.algorithms.join import Join; with Join([model]): for batch in loader: ...`
   — which mirrors the missing ranks' collectives so finished ranks don't deadlock
-  ([Join tutorial](https://docs.pytorch.org/tutorials/advanced/generic_join.html)).
-- Always call `sampler.set_epoch(epoch)` each epoch, or every epoch sees the identical shuffle (a
-  silent correctness bug — **references/verifying/methodology.md** **REQUIRED**).
+  ([Join tutorial](https://docs.pytorch.org/tutorials/advanced/generic_join.html)). `model.join()` is the
+  legacy spelling of the same context manager.
+- Always call `sampler.set_epoch(epoch)` each epoch → `references/training/data-pipeline.md` DP14.
 
 ### D10 — BatchNorm stats diverge across ranks; buffers aren't synced
 
@@ -194,8 +179,7 @@ per-GPU batches each replica's BN stats are noisy and inconsistent.
 
 **Fix**: convert BN to synchronized BN before wrapping:
 `model = nn.SyncBatchNorm.convert_sync_batchnorm(model)` then `DDP(model, ...)`. Adds a collective per
-BN layer (cost), but BN stats become global. (Whether the metric *needs* SyncBN is a
-**references/verifying/methodology.md** call.)
+BN layer (cost), but BN stats become global.
 
 ### D11 — N GPUs silently N× the effective batch (and the LR is now wrong)
 
@@ -210,8 +194,6 @@ silent multi-GPU regression.
 `world_size`, per-GPU batch, and effective batch in the run manifest. **This changes the science** —
 declare it; comparing a 1-GPU baseline to an 8-GPU run with unscaled LR is not a clean datapoint
 (**references/verifying/methodology.md** **REQUIRED**).
-
----
 
 ## FSDP (Fully Sharded Data Parallel)
 
@@ -261,41 +243,24 @@ weights and casts to bf16 for forward
 
 **Fix**: set all three deliberately — a safe default is `param_dtype=bf16, reduce_dtype=fp32` (keep
 reductions in fp32 for stability), and set `buffer_dtype` explicitly so buffers don't drift. Prefer
-**bf16 over fp16** for sharded training (no loss-scaler needed). The numerical-correctness check is
-**references/verifying/methodology.md**; this entry only ensures the dtypes are *set*, not left implicit.
+**bf16 over fp16** for sharded training (`references/training/precision-stability.md` P1). The
+numerical-correctness check is **references/verifying/methodology.md**; this entry only ensures the dtypes
+are *set*, not left implicit.
 
 ### D15 — Checkpoint OOMs or saves an unloadable shard (state_dict type)
 
-**Symptom**: `FSDP.state_dict()` OOMs the host RAM on rank 0; or every rank wrote a `.pt` and reloading
-on a different world size fails.
-
-**Root cause**: FSDP has three state-dict types. `FULL_STATE_DICT` gathers + unflattens the whole model
-to **rank-0 CPU** (peaks host RAM, single-writer); `SHARDED_STATE_DICT` writes one shard per rank
-(scales, but tied to layout); `LOCAL_STATE_DICT` is raw flat params
-([HF FSDP](https://huggingface.co/docs/accelerate/en/usage_guides/fsdp)).
-
-**Fix**:
-- Large models / want resumable-at-scale: **`SHARDED_STATE_DICT`** via Distributed Checkpoint (DCP) — each rank saves its shard, reload reshards to any world size.
-- Need a single portable file (export/inference): `FULL_STATE_DICT` with `rank0_only=True, offload_to_cpu=True` so only rank 0 materializes it on CPU (avoids the all-ranks OOM). FSDP2 uses `broadcast_from_rank0=True` to load the full dict on rank 0 then shard out.
-- Atomic-write + load-latest-on-startup is the resume spine regardless of type → `references/run-remote/spot-resilience.md` and `references/run-remote/multinode.md` MN5 (a torchrun restart restores the *group*, never the *state*).
-
----
+Checkpointing a sharded model (`FULL_STATE_DICT` vs `SHARDED_STATE_DICT` vs DCP, the rank-0 gather OOM,
+resharding onto a different world size) → `references/training/checkpoint-resume.md` C5–C7. Atomic-write +
+load-latest-on-startup is the resume spine regardless of type → `references/run-remote/spot-resilience.md`
+and `references/run-remote/multinode.md` MN5 (a torchrun restart restores the *group*, never the *state*).
 
 ## DeepSpeed
 
 ### D16 — ZeRO stage selection (1/2/3) and what each shards
 
-**Symptom**: ZeRO enabled but still OOM, or comms overhead with no memory need.
-
-**Root cause**: stages shard progressively more across data-parallel ranks
-([DeepSpeed ZeRO](https://www.deepspeed.ai/tutorials/zero/)):
-**Stage 1** = optimizer states · **Stage 2** = + gradients · **Stage 3** = + parameters (== FSDP
-`FULL_SHARD`).
-
-**Fix**: smallest stage that fits — Stage 2 is the common sweet spot for models that *almost* fit;
-Stage 3 for models that don't fit even with grads sharded; add **ZeRO-Offload** (CPU) or
-**ZeRO-Infinity** (NVMe) only when Stage 3 alone still OOMs (each offload trades large slowdowns for
-capacity → `references/training/oom-memory.md` M10).
+Stage selection (what each stage shards, which one to pick, the 1:1 map onto FSDP's `ShardingStrategy`)
+is a rung of the fit-it ladder → `references/training/oom-memory.md` M9; CPU/NVMe offload once the
+largest stage still OOMs → M10.
 
 ### D17 — The `ds_config.json` knobs that actually matter
 
@@ -337,7 +302,76 @@ skips scaling ([DeepSpeed engine](https://github.com/microsoft/DeepSpeed/blob/ma
 loop call `model_engine.backward(loss); model_engine.step()` — never `loss.backward()` /
 `optimizer.step()` directly under DeepSpeed.
 
----
+## The HANGS — debugging a frozen distributed job (highest-value section)
+
+A distributed hang has **no traceback** — every rank sits in a collective waiting for a peer that will
+never call it. The job to do is identify *which rank* diverged and *which collective* mismatched.
+(Distinct from a **single-process** vanish — for OOM/reboot/SSH-HUP/kill, see
+`references/run-remote/gotchas_universal.md` U3; for the *inter-node* causes — fabric-manager, wrong NIC, MTU, the 1800 s NCCL timeout that *masks*
+the real failure — see `references/run-remote/multinode.md` MN1-MN4.)
+
+### D19 — The desync-debug toolkit: turn a silent freeze into a named mismatch
+
+**Symptom**: all ranks frozen, GPUs at 100% SM util but 0% memory-util (spin-wait), no output.
+
+**Root cause**: a collective desync — ranks enqueued *different* collectives, or one rank never reached
+the collective the others are blocked in.
+
+**Fix — set these and relaunch the hang**:
+- `export TORCH_DISTRIBUTED_DEBUG=DETAIL` + `export TORCH_CPP_LOG_LEVEL=INFO` → on mismatch PyTorch prints `Detected mismatch between collectives on ranks`, naming the op + sequence number per rank ([PyTorch forum](https://discuss.pytorch.org/t/torch-distributed-collectives-call-logging/172726)). (DETAIL itself does collectives — use to *diagnose*, remove for production; it can perturb timing.)
+- `export NCCL_DEBUG=INFO` (or `WARN`) → the node whose log **stops first** before others print their topology is the culprit.
+- `export TORCH_NCCL_ASYNC_ERROR_HANDLING=1` (older PyTorch: `NCCL_ASYNC_ERROR_HANDLING=1`) → a dead rank tears the group down *promptly* instead of every rank waiting out the 1800 s NCCL timeout (`references/run-remote/multinode.md` MN3).
+- **Flight Recorder** (`TORCH_NCCL_TRACE_BUFFER_SIZE=2000`) dumps the last N collectives per rank with stack traces — read it to see which rank's queue is one collective behind.
+
+### D20 — One rank diverged (NaN/OOM) and the survivors hang waiting for it
+
+**Symptom**: training ran for a while, then froze; one rank's last log shows a NaN, an OOM, or a
+data/CUDA error, the rest are stuck in allreduce.
+
+**Root cause**: a rank that crashes or `return`s early **stops calling collectives**; the others block.
+The crash is the cause, the hang is the symptom — and without async error handling (D19) it surfaces
+30 min later as a timeout, far from the cause.
+
+**Fix**: with `TORCH_NCCL_ASYNC_ERROR_HANDLING=1` the group aborts near the true failure. Then fix the
+*diverged rank*, not the hang — common roots: one shard hit a bad sample (rank-dependent data), a
+per-rank OOM from uneven sequence lengths (longest-batch lands on one rank →
+`references/training/oom-memory.md` M16), or
+NaN from LR/precision. Don't lower batch size to "fix" a hang that was actually one rank's data bug.
+
+### D21 — A rank-conditional collective (the `if rank == 0:` deadlock)
+
+**Symptom**: hangs reproducibly at the *same* spot — often validation, logging, or checkpoint save.
+
+**Root cause**: a collective (or a `dist.barrier()`, or an op that *implies* one like `all_gather`,
+SyncBN, or a metric `all_reduce`) placed inside a rank-conditional branch. Rank 0 calls it; others
+skip it; everyone deadlocks. The classic is "save/log on rank 0 only" where the save path triggers a
+collective ([Lightning#19604](https://github.com/Lightning-AI/pytorch-lightning/issues/19604)).
+
+**Fix**: collectives must run on **all ranks unconditionally**. Gate only the *side effect*, not the
+collective: compute the metric's `all_reduce` on every rank, then `if rank == 0: log(value)`. A
+`barrier()` must be reached by every rank or none. Audit every `if rank/local_rank == 0` block for a
+hidden collective.
+
+### D22 — Dataloader length mismatch across ranks (and the `set_epoch` shuffle bug)
+
+A hang at end of epoch from unequal `len(loader)` per rank is D9 (identical sampler settings on every
+rank, or **Join**); every epoch training on the identical order is the `set_epoch` bug →
+`references/training/data-pipeline.md` DP14.
+
+### D23 — `print` / `tqdm` / eval / `torch.save` interleaving looks like a hang (but isn't always)
+
+**Symptom**: garbled interleaved logs from 8 ranks; or an apparent freeze during eval where only rank 0
+should be working.
+
+**Root cause**: by default **every rank executes everything** — 8× the prints, 8× eval, 8 ranks racing
+to write the same checkpoint file (corrupting it). If the eval/save path contains a collective and is
+*also* rank-gated, it's the D21 deadlock; if not, it's just noisy + wasteful + a file race.
+
+**Fix**: gate pure side effects (logging, progress bar, file writes) to `if rank == 0:` — but keep any
+collective *outside* the gate (D21). Write checkpoints from rank 0 only, to a temp path, atomic-rename
+(`references/run-remote/spot-resilience.md`), and `dist.barrier()` (on **all** ranks) before others read the file.
+A genuine hang vs noisy-but-progressing is told apart by the Flight Recorder / step counter (D19), not
+by the log soup.
 
 ## Tensor & 2-D parallelism (DeviceMesh)
 
@@ -366,87 +400,7 @@ failures here are "won't start / mis-shards / hangs / slow", not accuracy.
 **Root cause**: TP does a collective **every layer**; if the TP group spans the slow inter-node link, that per-layer comm dominates. TP wants NVLink, not cross-node Ethernet/IB.
 **Fix**: make `tp` the **innermost** mesh dim mapped to GPUs on one host (`tp ≤ GPUs-per-node`), let `dp`/FSDP span nodes — then only the (less frequent) DP reduction crosses nodes. A frozen TP group is the same hang physics as D19–D21 (a rank-conditional collective inside the TP group deadlocks identically).
 
----
-
-## The HANGS — debugging a frozen distributed job (highest-value section)
-
-A distributed hang has **no traceback** — every rank sits in a collective waiting for a peer that will
-never call it. The job to do is identify *which rank* diverged and *which collective* mismatched.
-(Distinct from a **single-process** vanish — for OOM/reboot/SSH-HUP/kill, see `gotchas_universal.md`
-U3; for the *inter-node* causes — fabric-manager, wrong NIC, MTU, the 1800 s NCCL timeout that *masks*
-the real failure — see `references/run-remote/multinode.md` MN1-MN4.)
-
-### D19 — The desync-debug toolkit: turn a silent freeze into a named mismatch
-
-**Symptom**: all ranks frozen, GPUs at 100% SM util but 0% memory-util (spin-wait), no output.
-
-**Root cause**: a collective desync — ranks enqueued *different* collectives, or one rank never reached
-the collective the others are blocked in.
-
-**Fix — set these and relaunch the hang**:
-- `export TORCH_DISTRIBUTED_DEBUG=DETAIL` + `export TORCH_CPP_LOG_LEVEL=INFO` → on mismatch PyTorch prints `Detected mismatch between collectives on ranks`, naming the op + sequence number per rank ([PyTorch forum](https://discuss.pytorch.org/t/torch-distributed-collectives-call-logging/172726)). (DETAIL itself does collectives — use to *diagnose*, remove for production; it can perturb timing.)
-- `export NCCL_DEBUG=INFO` (or `WARN`) → the node whose log **stops first** before others print their topology is the culprit.
-- `export TORCH_NCCL_ASYNC_ERROR_HANDLING=1` (older PyTorch: `NCCL_ASYNC_ERROR_HANDLING=1`) → a dead rank tears the group down *promptly* instead of every rank waiting out the 1800 s NCCL timeout (`references/run-remote/multinode.md` MN3).
-- **Flight Recorder** (`TORCH_NCCL_TRACE_BUFFER_SIZE=2000`) dumps the last N collectives per rank with stack traces — read it to see which rank's queue is one collective behind.
-
-### D20 — One rank diverged (NaN/OOM) and the survivors hang waiting for it
-
-**Symptom**: training ran for a while, then froze; one rank's last log shows a NaN, an OOM, or a
-data/CUDA error, the rest are stuck in allreduce.
-
-**Root cause**: a rank that crashes or `return`s early **stops calling collectives**; the others block.
-The crash is the cause, the hang is the symptom — and without async error handling (D19) it surfaces
-30 min later as a timeout, far from the cause.
-
-**Fix**: with `TORCH_NCCL_ASYNC_ERROR_HANDLING=1` the group aborts near the true failure. Then fix the
-*diverged rank*, not the hang — common roots: one shard hit a bad sample (rank-dependent data), a
-per-rank OOM from uneven sequence lengths (longest-batch lands on one rank → `oom-memory.md` M16), or
-NaN from LR/precision. Don't lower batch size to "fix" a hang that was actually one rank's data bug.
-
-### D21 — A rank-conditional collective (the `if rank == 0:` deadlock)
-
-**Symptom**: hangs reproducibly at the *same* spot — often validation, logging, or checkpoint save.
-
-**Root cause**: a collective (or a `dist.barrier()`, or an op that *implies* one like `all_gather`,
-SyncBN, or a metric `all_reduce`) placed inside a rank-conditional branch. Rank 0 calls it; others
-skip it; everyone deadlocks. The classic is "save/log on rank 0 only" where the save path triggers a
-collective ([Lightning#19604](https://github.com/Lightning-AI/pytorch-lightning/issues/19604)).
-
-**Fix**: collectives must run on **all ranks unconditionally**. Gate only the *side effect*, not the
-collective: compute the metric's `all_reduce` on every rank, then `if rank == 0: log(value)`. A
-`barrier()` must be reached by every rank or none. Audit every `if rank/local_rank == 0` block for a
-hidden collective.
-
-### D22 — Dataloader length mismatch across ranks (and the `set_epoch` shuffle bug)
-
-**Symptom**: hang at end of epoch (D9's mechanism), OR every epoch trains on the identical data order.
-
-**Root cause**: two related dataloader faults. (a) Unequal `len(loader)` per rank → the short rank
-stops calling collectives. (b) Forgetting `sampler.set_epoch(epoch)` → `DistributedSampler` reshuffles
-identically every epoch.
-
-**Fix**: identical `batch_size`/`drop_last`/sampler on all ranks; call `set_epoch` each epoch; for
-genuinely uneven data use **Join** (D9). The shuffle-staleness is a correctness bug —
-**references/verifying/methodology.md** **REQUIRED**.
-
-### D23 — `print` / `tqdm` / eval / `torch.save` interleaving looks like a hang (but isn't always)
-
-**Symptom**: garbled interleaved logs from 8 ranks; or an apparent freeze during eval where only rank 0
-should be working.
-
-**Root cause**: by default **every rank executes everything** — 8× the prints, 8× eval, 8 ranks racing
-to write the same checkpoint file (corrupting it). If the eval/save path contains a collective and is
-*also* rank-gated, it's the D21 deadlock; if not, it's just noisy + wasteful + a file race.
-
-**Fix**: gate pure side effects (logging, progress bar, file writes) to `if rank == 0:` — but keep any
-collective *outside* the gate (D21). Write checkpoints from rank 0 only, to a temp path, atomic-rename
-(`references/run-remote/spot-resilience.md`), and `dist.barrier()` (on **all** ranks) before others read the file.
-A genuine hang vs noisy-but-progressing is told apart by the Flight Recorder / step counter (D19), not
-by the log soup.
-
----
-
-## Pointers — handled elsewhere, do not restate
+## Pointers — handled elsewhere
 
 - **Inter-node wire** (NCCL NIC pinning, `nvidia-fabricmanager`, the 1800 s timeout masking a dead rank, jumbo-frame MTU, torchrun/Horovod elastic restart restoring the *group* not the *state*) → `references/run-remote/multinode.md` (**REQUIRED** for ≥2 instances).
 - **Sharding *to fit a model that OOMs*** (the FSDP/ZeRO ladder in cost order, activation checkpointing, offload, LoRA/QLoRA, reading the OOM trace) → `references/training/oom-memory.md`.
