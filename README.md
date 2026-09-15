@@ -131,7 +131,6 @@ remote-gpu-trainer/
 │   │                              #     completeness-reconciliation
 │   ├── training/                  #   the DL-training debug layer (8 files; local/remote-agnostic):
 │   │                              #     OOM · NCCL-hang · NaN · throughput · ckpt · domain · convergence · data
-│   ├── companions.md              #   optional companion skills + the no-companion fallback
 │   └── self-improvement.md        #   how the skill captures new gotchas without corrupting itself
 ├── profiles/                      # one file per platform — the only place concrete specifics live
 │   ├── _schema.md                 #   the shared 8-section contract every profile fills
@@ -189,9 +188,9 @@ standard. Provider-bound monitoring, scheduling, and tool names still require th
 uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill" (the official validator; the CLI binary is `agentskills`, from the `skills-ref` package)
 ```
 
-> **Two caveats.** The optional companion skills it cross-links (`nature-figure`, `experiment-verifier`,
+> **Two caveats.** The optional companion skills it cross-links (`nature-figure`, `adversarial-verifier`,
 > `superpowers:*`, `huggingface-skills:*`) are separate installs, and the skill works fully standalone
-> without any of them (see `references/companions.md`). A few of the durable-monitoring recipes assume the
+> without any of them (see the Companion skills section below). A few of the durable-monitoring recipes assume the
 > host has a background-task runner and a scheduler; map those to your agent's equivalents with the
 > per-host table in `references/run-remote/monitoring_patterns.md` §7.
 

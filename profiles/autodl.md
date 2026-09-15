@@ -53,7 +53,7 @@ To jump: `grep -in '<keyword>' profiles/autodl.md` (e.g. `grep -in inode profile
 console → test `ssh -p <PORT> root@connect.<region>.seetacloud.com 'nvidia-smi'`. That string is your entry to
 every phase below. (Console-only steps; AutoDL's UI shifts — re-check its docs if a label moved.)
 
-**Entry points.** Web console (创建实例) for create/release/power; per-instance SSH connection string from
+**Name the box on creation (user ruling 2026-09-10 「你用的电脑都要改名称啊，以做标记」).** Rename every instance in the console to `<project>-<purpose>-<yyyymmdd>` (for example `<project>-main-20260914`) before the first ssh, mirror that name in the `~/.ssh/config` alias and in `active/<run-id>/run.json`, and treat an unnamed instance in the console as not yet yours to use. **Entry points.** Web console (创建实例) for create/release/power; per-instance SSH connection string from
 the console (`ssh -p <PORT> root@connect.<region>.seetacloud.com`). No first-class platform CLI/REST for
 job control — SSH is the orchestration channel. Set a stable alias per instance in `~/.ssh/config`
 (`Host autodl-<proj>-<N>`, `HostName connect.<region>.seetacloud.com`, `Port <PORT>`) so every later
@@ -121,9 +121,15 @@ for each test, `min(100, N_test) × conditions × task-native roles`, with stabl
 `test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`. This full coverage is required for
 every declared test and is not an optional preview set. Hardware output follows the same coverage rule but
 must close as a separate `export/hardware/<hardware-run-id>` capsule, never inside software
-`export/<run-id>`. Bind the fixed selection manifest's
-`_trust/selections/<selection-id>.json` path/hash in `run.json`; do not add a second selection manifest,
-legacy visualization index, default montage/contact sheet, or full test-render tree.
+`export/<run-id>`. Bind the one versioned selection manifest path/hash in `run.json`: schema 2 retains its
+`_trust/selections/<selection-id>.json` `all`/`fixed_model_blind` contract, while schema 3 may use any safe
+project-relative path and binds exact MNIST-test K=512 clean float32 main-model/config/checkpoint identities
+plus the complete unrounded reconstruction-PSNR score source and population. Schema 3 uses descending PSNR,
+canonical sample-ID tie breaks, K=`min(100,N_test)`, and the same ordered roster for all methods, conditions,
+and reconstruction/segmentation/detection exports. It is qualitative-only and cannot support typical,
+overall, fairness, or unbiased-comparison claims. No-GT data requires a separate explicit non-PSNR roster.
+Do not add a second selection manifest, legacy visualization index, default montage/contact sheet, or full
+test-render tree; full-test metrics retain the full population.
 Checkpoints are inode-cheap but still retention-bounded. Monitor `df -i`, not just `df -h` (Phase 0 +
 every space check). Eval-artifact sizing policy is owned by **REQUIRED:**
 references/verifying/methodology.md.
@@ -173,11 +179,10 @@ project's existing hosted tracker and the bundled `scripts/wandb_forensics.py`).
 
 **SSH flavor.** Direct-TCP SSH on the per-instance host:port — `scp`/`rsync` work normally (no proxied-SSH
 restriction). Use a per-dir resumable loop for large transfers (single-connection `scp -r` resets mid-
-transfer); `rsync -avz --partial` is preferred. On Windows with Clash/Mihomo, keep OpenSSH direct as
-the first path; only recorded banner-timeout/fake-IP/TUN evidence may enter the parameterized DoH +
-`IP_UNICAST_IF` single-socket fallback. Do not change system routes, DNS, proxy settings, or
-Clash/Mihomo configuration. Transport and host-key receipt contract →
-`references/run-remote/ssh_transport.md` §4A.
+transfer); `rsync -avz --partial` is preferred. Transport setup and host-key verification live in
+`references/run-remote/ssh_transport.md`; after a connection loss, re-probe remote truth through
+`references/run-remote/monitoring_patterns.md`. A connection error alone does not establish run,
+instance, or billing state.
 
 ---
 
@@ -221,13 +226,29 @@ only *within* the window; for a longer pause, first close canonical `export/<run
 hand it to `mirror-research-artifacts` for a durable replica. Low balance / arrears also force-stop the
 instance. **Surface this to the user up front
 (principle #10)** — most users assume 关机 parks the box indefinitely.
-**Teardown Iron Law (SKILL.md Phase 5):** no 释放 / file-delete until `best.pth` is **pulled to local AND
-verified by load** (`scripts/verify_local.py`) AND the user explicitly approves — "it looked done in the
-log" is not evidence (principle #3). Because 关机 is non-destructive here, the cheap safe move when unsure
+**Teardown Iron Law (SKILL.md Phase 5):** no 释放 / file-delete until the canonical remote is restored into an
+independent temporary consumer, every byte/hash matches, `best.pth` safely loads, full-prediction metrics
+recompute there, AND the user explicitly approves — "it looked done in the log" is not evidence (principle
+#3). The consumer may be remote. Because 关机 is non-destructive here, the cheap safe move when unsure
 is to **关机 and ask**, never 释放 on a guess. If a separate verification-before-completion skill is
 installed, invoke it; otherwise stop before release. The generic `mirror-research-artifacts` workflow owns
-the external frozen manifest, live exact-roster validation, and `PULL_VERIFIED.json`; none belongs in
-canonical `run.json`.
+the external frozen manifest, live exact-roster validation, and readback evidence; a local
+`PULL_VERIFIED.json` is one optional delivery receipt and none belongs in canonical `run.json`.
+
+**Container shutdown wrapper.** Some AutoDL images expose `/usr/bin/shutdown` as a short provider-owned
+ASCII shell wrapper with no shebang rather than an ELF binary. An interactive shell handles `ENOEXEC` by
+running such a file through `/bin/sh`, but Python `subprocess.Popen(["shutdown", "-h", "now"], shell=False)`
+does not and returns `Exec format error`. Do not misclassify that as an unsafe or unavailable shutdown.
+Resolve the absolute path, require a regular root-owned non-writable file, read the complete bounded body
+(at most 4 KiB), record its SHA-256, and reject unknown commands or paths. For a recognized provider
+wrapper whose complete effects match current authority, execute `[/bin/sh, <absolute-shutdown-path>, -h,
+now]` with `shell=False`. The observed wrapper may clear `/root/.local/share/Trash` before signalling the
+container; report that concrete side effect and never treat it as permission to delete research evidence.
+When that cleanup is outside scope but the fully read wrapper exposes one unambiguous stop operation, execute
+only that operation after binding its exact target identity (for example one stable `supervisord` PID before
+one `SIGTERM`); otherwise prefer the provider console/API 关机 control or stop with the exact body as one
+blocker. Do not require ELF/shebang after exact semantic acceptance, and never guess a private signal from a
+partial body.
 
 ---
 
@@ -378,3 +399,11 @@ If the job emits real capture/hardware results, do not add them to `$EXPORT_ROOT
 capture/decode/model-run bindings to `research-artifact-hygiene` or build, validate and atomically close the
 weight-free capsule at `$PARTIAL_ROOT/hardware/<hardware-run-id>` →
 `$EXPORT_ROOT/hardware/<hardware-run-id>`; its mandatory vis has full conditions × roles × K coverage.
+
+
+## Browser boot (user's Chrome, standing authorization)
+
+Screenshot / JS-injection / CDP timeouts recur when the console page is busy or mid-navigation
+(≥15 occurrences across the 2026-08 sessions). Discipline: treat a timeout as "page busy" —
+wait-and-retry with backoff (2s / 5s / 10s), never hammer the same call, and re-read the page
+state (read_page) before the next action instead of repeating the failed one.

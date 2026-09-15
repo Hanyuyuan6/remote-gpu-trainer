@@ -163,10 +163,31 @@ A net mapping a low-level input to a structured output whose output is near-iden
 
 A number without variance or a fair metric is not yet evidence:
 
-- **Variance, or a disclosed lack of it.** Report **mean ± std over ≥3 seeds when possible** — a band turns a single anecdote into evidence; **high-variance regimes (RL, small or noisy test sets) need ≥5+ seeds and a robust aggregate (IQM, not the mean) with CIs** (`references/training/by-domain.md` R6). If the user has chosen single-seed, that's their call: disclose "single-seed, no variance band — a delta inside run-to-run noise can't be told from signal" **once**, with the number, and move on; don't keep pushing for more seeds. Log the seed + determinism flags either way.
-- **An improvement inside the noise is not an improvement.** Overlapping error bars / no significance test ⇒ "SOTA by 0.1 %" is noise. **Name which variance you show: a paired bootstrap over the *test items* is sampling variance (valid even at one seed); std over seeds is *init/optimization* variance — different questions.** For a method-vs-baseline delta a **paired test on per-item scores** is tighter than two independent bands; a tiny test set reported to 3 decimals is false precision (report `n`).
-- **Which draw of the baseline are you standing on?** The rule above ("report ≥3 seeds") governs *your* arm; the trap is the *other* one. A single-seed probe compared against a **single draw of a multi-seed baseline** is not a comparison — it silently inherits whichever draw you picked, and the pick will drift toward the flattering one. Report the probe against the baseline's **distribution**: vs its mean, vs its best seed, vs its worst — and name the draw. *Live case:* an lr probe scored 49.12 against a baseline seed of 42.63 and read as **+6.49, "the baseline is under-tuned"**; that seed was the **worst** of the baseline's three (42.63 / 49.30 / 47.26). Against the mean it was +2.72; against the baseline's own **best** seed, **−0.18**. Same probe, three different stories, one honest one.
-- **Compute the MDE before you spend the GPU-hours.** From the baseline's known across-seed variance, the **minimum detectable effect** is arithmetic: `MDE ≈ t_crit(df) · sd · sqrt(2/n)`. **If MDE exceeds the effect you would act on, the design cannot answer the question** — add seeds, switch to a paired design, or say "existing data cannot resolve this" and keep the money. Note the MDE is floored by the **noisier arm** and no number of runs on the *quiet* arm lowers it. *Live case:* baseline sd 3.42, n=3 ⇒ **MDE = 7.75 pp — larger than the paper's entire headline gain (+9.9)**. The sweep could only ever have excluded a *huge* mismatch. That was 30 seconds of arithmetic, computed after 4 GPU-hours. When a result lands inside the MDE, it is **underpowered, not null** — say which; "no significant difference" and "we could not have seen it" are different findings.
+- **Name the uncertainty and justify sample size.** Report the distribution across seeds when available,
+  including seeds and determinism flags. Use mean ± std as descriptive spread when appropriate,
+  separately from an interval for the estimated effect. Seed SD describes initialization/optimization variation;
+  a paired analysis across independent test items addresses test-population uncertainty conditional
+  on the trained model. For a method-level claim across seeds and items, retain both sources and their
+  crossed/nested design. No fixed three/five-seed count or aggregate (mean/IQM) establishes adequacy.
+  Choose the estimator and sample size from the question, variance, precision or power and budget.
+  Respect an authorized single-seed design; disclose its unmeasured run variation once and proceed.
+- **Error-bar overlap is not a test of the difference.** Report the effect and a design-matched interval
+  or test/model; preserve pairs and clusters in resampling, report n, and do not treat crops of the same
+  image as independent images. A paired analysis can detect an effect despite overlapping marginal
+  bars. A wide interval means unresolved precision, not proof of zero effect; tiny or degenerate
+  resamples do not create information. See [NIST paired observations](https://www.itl.nist.gov/div898/handbook/prc/section3/prc311.htm)
+  and [two-sample inference](https://www.itl.nist.gov/div898/handbook/eda/section3/eda353.htm).
+- **Which draw of the baseline are you standing on?** Uncertainty disclosure applies to both arms; the trap is the comparator. A single-seed probe compared against a **single draw of a multi-seed baseline** is not a comparison — it silently inherits whichever draw you picked, and the pick will drift toward the flattering one. Report the probe against the baseline's **distribution**: vs its mean, vs its best seed, vs its worst — and name the draw. *Live case:* an lr probe scored 49.12 against a baseline seed of 42.63 and read as **+6.49, "the baseline is under-tuned"**; that seed was the **worst** of the baseline's three (42.63 / 49.30 / 47.26). Against the mean it was +2.72; against the baseline's own **best** seed, **−0.18**. Same probe, three different stories, one honest one.
+- **Plan detectable effects before spending GPU-hours.** Minimum detectable effect (MDE) depends on
+  the design, significance level alpha, target power (1−beta), sample sizes and variance assumptions.
+  For independent equal-variance arms with n per arm, a large-sample planning approximation is
+  `MDE ≈ (z_(1−alpha/2) + z_(1−beta)) · sd · sqrt(2/n)` for a two-sided test; paired designs use
+  the SD of paired differences and `sqrt(1/n)`. These are normal approximations, not exact small-n
+  guarantees: use a noncentral-t calculation or design-matched simulation for small samples or
+  hierarchy, and sensitivity analysis for uncertain variance. `t_crit · SE` alone is a significance
+  threshold, not MDE at a specified power. If the design cannot resolve the actionable effect,
+  change the authorized design or report that limitation; an observed small/non-significant result
+  is not automatically a null finding. [NIST sample-size and power derivation](https://www.itl.nist.gov/div898/handbook/prc/section2/prc222.htm).
 - **Don't cherry-pick the metric variant.** Reporting `mIoU` while hiding `PA`, `AP@0.5` while hiding `AP@[.5:.95]`, `PSNR` while hiding `LPIPS` is gaming — report the field's standard panel.
 - **A metric can be DECEPTIVELY HIGH for a trivial output on sparse / class-imbalanced data.** PSNR/SSIM and background-averaged multiclass mIoU reward matching the dominant background, so an all-black / all-background prediction scores *well*, not zero (an all-black digit ≈10 dB PSNR / SSIM ~0.44; multiclass mIoU floored by its background class) — and a collapsing model (§8) is rewarded *toward* that trivial optimum. Score **foreground-scoped** metrics (foreground-PSNR, foreground- or binary-IoU) AND **render** the output; never trust a high scalar on sparse data without looking. (Distinct from §7's all-*zero* metric: there the model emits nothing; here it emits the trivial majority and the metric applauds.)
 - **An operating point is not a threshold-free metric** (§7 decode-budget case): a threshold chosen on test, reported as mAP/F1, is selection-on-test (§4).
@@ -248,9 +269,9 @@ This skill mainly catches **bugs + negligence**, but **test-set tuning (§4), un
 | Copy baseline numbers from a different setting/split | re-run under one protocol or label the difference |
 | A green smoke ⇒ a correct model | `isfinite(loss)` survives scale/gradient bugs — assert train≡eval input (`allclose`) + gradient flow (64/64) + `model.eval()` |
 | Metric computed in normalized/z-space or wrong image-norm/channel order | de-normalize before scoring; one shared transform; check ImageNet-vs-[0,1], RGB/BGR |
-| Report a single (or best) seed | mean ± std over ≥3 seeds; an improvement inside the error bars is noise (§9) |
+| Report a single (or best) seed as a stable method improvement | disclose both arms and sample-size rationale; effect interval/test must match independent units, pairs and seed hierarchy (§9) |
 | Compare a single-seed probe against a single seed of a multi-seed baseline | report it against the baseline's distribution (vs mean / best / worst) and name the draw — the pick drifts toward the flattering one (§9) |
-| Run the sweep, then discover it could not have detected the effect | compute MDE from the baseline's sd *first*; MDE > the effect you'd act on ⇒ the design can't answer it. Inside the MDE = underpowered, **not** null (§9) |
+| Run the sweep, then discover it lacks useful precision/power | plan MDE using alpha, target power, variance and design; unresolved precision is not proof of zero effect (§9) |
 | Cherry-pick the favorable metric variant | report the field's standard panel (mIoU+PA, AP@[.5:.95], LPIPS) |
 | "The task is too hard" before a probe ladder | probe the raw-input ceiling + each stage (held-out); retry on a strong-signal easy task |
 | Tune against a metric at its chance floor (`ln B` / `1/B`) | dead proxy, no gradient — measure the quantity you care about directly |
@@ -283,7 +304,7 @@ This skill mainly catches **bugs + negligence**, but **test-set tuning (§4), un
 - Splits declared clean from reading prep code — probe the prepared artifacts (§4)
 - Selecting epoch / checkpoint / HP on the test split
 - A baseline weaker than its paper, or run at a budget/setting you don't impose on yourself
-- A headline number from a single (or hand-picked) seed, or a win inside the error bars
+- A headline number from a single (or hand-picked) seed, or a superiority claim without design-matched effect/difference evidence
 - A per-epoch "val" metric with no disjoint val loader — it is the training batch; the curve validates nothing
 - A high PSNR/SSIM/mIoU on sparse/imbalanced data taken at face value — background-matching inflates it; render + score foreground
 - Acting on a success log line without verifying the artifact landed

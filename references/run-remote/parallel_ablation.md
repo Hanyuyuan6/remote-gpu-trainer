@@ -167,9 +167,10 @@ Reconcile and re-verify **every cell before any teardown** — this is a hard ga
    **identical config** (principle #7) on a live instance via `start_index`, or append its line to a
    fresh queue. Do not patch one cell's config to make it pass — that destroys comparability.
 
-Only after the roster is 100% reconciled AND every cell loads does the teardown Iron Law unlock
-(SKILL.md Phase 5): no `release`/`terminate`/`destroy` until results are pulled to local AND verified
-by load AND the user approves the cost-affecting action.
+Only after the roster is 100% reconciled and the canonical remote is restored into an independent temporary
+consumer does the teardown Iron Law unlock (SKILL.md Phase 5): every cell must match bytes/SHA-256 and load,
+full-prediction metrics must recompute there, and the user must approve the cost-affecting action. The consumer
+may be remote; a resident local checkpoint is optional.
 
 ---
 

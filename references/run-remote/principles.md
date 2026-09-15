@@ -3,7 +3,7 @@
 These are the *why* behind every phase and gotcha. They hold on any **metered, isolated, rented GPU**
 — AutoDL, RunPod, vast.ai, Lambda, Paperspace, a Chinese platform, a bare SSH box, Slurm, or K8s. Only
 the concrete paths/CLI change (those live in `profiles/<platform>.md`). Internalize these; the recipes
-follow. The one-line form is in `SKILL.md`; this file carries the cross-platform nuance.
+follow. The one-line form is in `lifecycle_checklist.md`; this file carries the cross-platform nuance.
 
 To jump: `grep -n '^## ' references/run-remote/principles.md`.
 
@@ -155,8 +155,10 @@ needed) rather than silently shrinking the experiment (fewer seeds, smaller eval
 
 This is sharpened, not softened, by going multi-platform: on RunPod/vast/Lambda the meter-stopping action
 is the **irreversible** `terminate`/`destroy` that deletes the disk — so the confirmation gate matters
-*more*. Operationalize it as the **teardown Iron Law** (SKILL.md Phase 5): no teardown before checkpoints
-are pulled to local AND verified by load AND the user approves the specific cost-affecting action.
+*more*. Operationalize it as the **teardown Iron Law** (lifecycle_checklist.md:117, Phase 5): no teardown
+before the canonical remote is restored/read back into an independent temporary consumer, every byte/hash
+matches, the checkpoint safely loads, full-prediction metrics recompute, and the user approves the specific
+cost-affecting action. That consumer may be remote; Mac residency is not required.
 
 *Universal.* A shared FS is also multi-project: work inside your project's own folder, delete only your
 own redundancy, never a top-level dir you didn't create.

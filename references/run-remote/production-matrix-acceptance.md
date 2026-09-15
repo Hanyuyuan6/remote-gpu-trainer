@@ -73,8 +73,8 @@ Split verification into two lanes:
 1. **Control plane (small and repeatable):** schema, canonical JSON, paths, identities, contract/script hashes,
    state transitions and empty-directory semantics. Make this lane green before reading a large payload.
 2. **Data plane (large and bounded):** exact roster/bytes/SHA-256 plus fresh checkpoint safe-load. Recompute the
-   large payload once at each real trust boundary—producer, independent remote acceptance and local pull—not
-   once per wrapper, fixture or verifier revision.
+   large payload once at the producer and at each declared independent consumer trust boundary. A Mac pull is
+   one possible consumer, not a universal requirement; do not repeat it per wrapper, fixture or verifier revision.
 
 A SHA match proves byte identity, not parse or schema correctness. If a frozen verifier encoded the wrong
 schema, preserve it and mint a new immutable verifier/contract; never monkeypatch or bypass the gate in place.

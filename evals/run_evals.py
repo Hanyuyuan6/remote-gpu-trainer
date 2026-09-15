@@ -81,13 +81,13 @@ def main():
         for pr in problems:
             print(f"         - {pr}")
     print(f"\n{passed}/{passed + failed} cases reachable" + ("" if not failed else f"  ({failed} FAILED)"))
-    offline_failed = 0
+    offline_failed = 0  # Windows SSH transport contract retired 2026-09-02 with the Windows machine
     try:
-        contract = runpy.run_path(str(CASES.parent / "test_windows_ssh_transport.py"))
-        offline_failed = int(contract["main"]())
-    except Exception as exc:  # fail closed when the offline contract cannot even load
-        offline_failed = 1
-        print(f"[FAIL] offline Windows SSH transport contract: {exc}")
+        surface = runpy.run_path(str(CASES.parent / "test_instruction_surface.py"))
+        offline_failed += int(surface["main"]())
+    except Exception as exc:
+        offline_failed += 1
+        print(f"[FAIL] instruction-surface contract: {exc}")
     return 1 if failed or offline_failed else 0
 
 

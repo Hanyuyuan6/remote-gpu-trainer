@@ -71,8 +71,9 @@ box. Caps are host-dependent — do **not** carry over an AutoDL ~200K-inode or 
 
 The only "survival matrix" subtlety on a bare box: there is **no stop/destroy distinction the
 platform enforces** — the box runs until *manually* stopped, and a destroy wipes the disk with no
-undo. So checkpoints must land on a mount that gets `rsync`-pulled to local **before** teardown
-(§5). Disk fails on inodes before bytes and the real hog hides in a symlinked cache — audit the
+undo. So checkpoints must land on a durable canonical remote that is restored/read back into an independent
+temporary consumer **before** teardown (§5); that consumer may be remote. Disk fails on inodes before bytes
+and the real hog hides in a symlinked cache — audit the
 actual mount with `du`, clean by value (keep tiny eval JSONs, prune large periodic checkpoints).
 
 ## 3. NETWORK
@@ -106,12 +107,13 @@ overnight idle instance is the most expensive single mistake on metered hardware
 
 - The meter-stopping action is **provider-manual** (a console "stop"/"destroy", a `terminate` API, or
   a phone call) — and on most bare rentals it is **irreversible** (deletes the disk).
-- "Stop after pulling results" is a **mandatory final phase**, not an afterthought. Honor the
-  **teardown Iron Law**: no stop/destroy until checkpoints are **pulled to local AND verified by
-  load** (`scripts/verify_local.py`) **AND** the user has approved the cost-affecting action.
+- "Verify custody, then stop" is a **mandatory final phase**, not an afterthought. Honor the
+  **teardown Iron Law**: no stop/destroy until canonical-remote bytes are restored into an independent
+  temporary consumer, match the exact roster/SHA-256, safely load, reproduce full-prediction metrics,
+  **AND** the user has approved the cost-affecting action.
   "It looked done in the log" is not evidence (principle #3). If a separate
   verification-before-completion skill is installed, invoke it; otherwise enforce this skill's
-  exact manifest + local `PULL_VERIFIED.json` gate.
+  exact manifest + independent-consumer gate. Local `PULL_VERIFIED.json` applies only to a local delivery.
 
 ## 6. DAEMON TOOL
 
@@ -186,7 +188,7 @@ Values to parameterize the `scripts/` templates for a bare-SSH box:
 
 ```
 DATA_DIR=$HOME/proj    (working dir / data disk on the box)
-DURABLE_DIR=$HOME/proj (durable mount = the measured persistent disk; pull to local before teardown)
+DURABLE_DIR=$HOME/proj (durable mount; restore canonical bytes to an independent consumer before teardown)
 PROXY_HOOK=        (none by default; set HF_ENDPOINT=https://hf-mirror.com only if behind the GFW)
 CRED_FILE=~/.netrc on the box's local disk, streamed in via stdin — never onto a shared/durable FS
 SCRATCH=*.latest.pth and periodic checkpoints  (prune on success; keep best + tiny eval JSONs)

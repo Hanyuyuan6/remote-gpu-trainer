@@ -102,7 +102,7 @@ snapshot **survives a machine destroy**, so an orphaned snapshot keeps charging 
 
 **Mount checkpoints MUST go to (for the §5 teardown verb):** on Notebooks, `/storage` (cross-stop,
 cross-delete-of-the-notebook) — `/notebooks` dies if the notebook itself is deleted. On Core, the block
-disk survives a stop, but a *destroy* wipes it, so the Iron-Law pull-to-local before destroy still applies.
+disk survives a stop, but a *destroy* wipes it, so the Iron-Law independent-consumer restore before destroy applies.
 No documented inode cap on either tier; still monitor `df -i` (universal, U7 / principle #5).
 
 ---
@@ -192,8 +192,9 @@ no stop), but unlike AutoDL's 关机 the **storage + IP + snapshots keep billing
 destroyed/released. "Stopped" ≠ "free."
 
 > **Iron Law (teardown gate):** NO destroy/delete of the machine, release of the IP, or deletion of
-> `/storage`/block-storage/snapshot until checkpoints are **pulled to local AND verified by load**, and the
-> user has **explicitly approved** the specific cost-affecting action. A destroy is irreversible — "it
+> `/storage`/block-storage/snapshot until the canonical remote is restored into an independent temporary
+> consumer, bytes/SHA-256 match, the checkpoint safely loads, full-prediction metrics recompute, and the user
+> has **explicitly approved** the specific cost-affecting action. The consumer may be remote. A destroy is irreversible — "it
 > looked done in the log" is not evidence (principle #3). General form →
 > `superpowers:verification-before-completion`.
 

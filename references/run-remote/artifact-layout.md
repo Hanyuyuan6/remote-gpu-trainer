@@ -108,12 +108,17 @@ Closure rules:
   fixed selection bindings, seed/determinism, and checkpoint selection metadata.
 - Caches, general training logs, full tracker state, default montages, and unbounded per-epoch checkpoints are
   excluded unless the canonical run schema explicitly classifies one as evidence.
-- A visualization selection is fixed per test set, identified by a stable `selection_id`, and contains
-  exactly K = `min(100, N_test)` sample ids (or all samples when the test set is smaller). Every declared
-  condition and task-native role must render all K ids. Reuse that selection across models and protocols;
-  never choose a performance-ranked top 100. `run.json` binds the canonical
-  selection manifest path under project `_trust/selections/<selection-id>.json` and its hash. Do not embed a
-  second selection manifest or legacy visualization index inside the export.
+- A visualization selection is versioned and fixed per test set, identified by a stable `selection_id`, and
+  contains exactly K = `min(100, N_test)` sample ids. Schema 2 retains its original `all` or
+  `fixed_model_blind` semantics and `_trust/selections/<selection-id>.json` location. For schema 2, never choose a performance-ranked top 100. Schema 3 is the
+  explicitly approved main-model reconstruction-PSNR ranking for MNIST test, K=512 clean float32: it binds
+  the exact model/config/checkpoint hashes plus the complete unrounded score-source hash and population,
+  sorts PSNR descending with canonical sample ID ascending for ties, and may use any safe project-relative
+  manifest path. Reuse its same ordered roster for every method, condition, and reconstruction,
+  segmentation, or detection run. Full-test metrics still cover the full test population; this ranked
+  roster supports qualitative examples only, never typical, overall, fairness, or unbiased-comparison
+  claims. No-GT tests use a separate explicit roster and must not use PSNR ranking. `run.json` binds the one
+  manifest path/hash; do not embed a second manifest or legacy visualization index inside the export.
 - Re-running or changing any sealed byte mints a new run id; never overwrite `export/<run-id>`.
 
 ## Atomic closeout and quarantine

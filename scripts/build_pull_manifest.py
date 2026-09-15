@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build a fail-closed manifest for a remote result bundle.
+"""Build a fail-closed manifest for a materialized-local delivery.
 
-The manifest is created on the durable remote filesystem before the final pull.
-It binds a run id to an exact file roster, byte sizes, and SHA-256 digests.  The
-local verifier refuses teardown when the roster or any digest differs.
+The manifest is created on the durable remote filesystem before a requested
+local pull. It binds a run id to an exact file roster, byte sizes, and SHA-256
+digests. The local verifier rejects that delivery when roster or digest differs.
+Other independent-consumer paths use the general SKILL.md Phase 5 contract.
 """
 from __future__ import annotations
 

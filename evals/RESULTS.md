@@ -36,11 +36,9 @@ scenario's `must_cover` points within ~2 hops.
 
 **Summary: 15/15 scenarios routed correctly** (9 via workflow `w2r1t7mm9`, 6 standalone), each to a
 correct + specific answer within ≤2 hops. The Tier-1 structural check (`run_evals.py`) runs the **full
-`cases.jsonl`** — 29 cases as of 2026-08; the runner's summary line is authoritative if this number drifts.
+`cases.jsonl`**; its summary line is authoritative.
 The 15 scenarios above have agentic evidence; later load-bearing guards, including the AutoDL canonical
-export/mirror boundary, are structural-only unless their case explicitly records an agentic re-run — and,
-together with `scripts/test_reconcile.py`, is the regression guard CI runs on every push / PR
-(`.github/workflows/evals.yml` — pure stdlib, no secrets).
+export/mirror boundary, are structural-only unless their case explicitly records an agentic re-run.
 
 The AutoDL structural case also checks both executable delivery helpers independently and fails if either
 reintroduces `results/<exp-id>/runs` or `selected/checkpoints`; this is a path-regression check, not evidence

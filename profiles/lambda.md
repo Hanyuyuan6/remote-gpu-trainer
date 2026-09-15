@@ -174,11 +174,12 @@ What each action preserves:
 - **restart / cold reboot** — does **not** stop the meter and does **not** wipe disk, but a **cold reboot
   erases RAM and bypasses safe shutdown** — reserve it for a frozen box only (LAM9).
 
-**Iron Law (SKILL.md Phase 5):** NO `terminate` until checkpoints are **pulled to local OR confirmed on
-NFS by load-test** AND the user approves the cost-affecting action. Because terminate is destructive and
-irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss** — verify the sync (checksum /
-`ls -l` / a load) before terminating, not after. Egress is free, so a belt-and-suspenders `pull` to local
-is cheap. Cross-link: `superpowers:verification-before-completion` (REQUIRED) for the general gate.
+**Iron Law (SKILL.md Phase 5):** NO `terminate` until the canonical remote is restored into an independent
+temporary consumer, exact roster/bytes/SHA-256 match, the checkpoint safely loads, full-prediction metrics
+recompute there, AND the user approves the cost-affecting action. NFS may be the canonical remote but is not
+its own independent readback; the consumer may be another remote node. Because terminate is destructive and
+irreversible, an unverified `cp`/`rsync` to NFS means **permanent loss**. Cross-link:
+`superpowers:verification-before-completion` (REQUIRED) for the general gate.
 
 ---
 

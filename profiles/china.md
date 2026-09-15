@@ -177,8 +177,9 @@ cadence formula in `references/run-remote/spot-resilience.md` still applies if a
 ## 5. TEARDOWN / BILLING  *(principle #9 + the Iron Law)*
 
 **The meter-stop verb is per-platform — bind it from the table below before clicking anything.** The Iron Law
-(SKILL.md Phase 5) holds unchanged: NO release/return/destroy until checkpoints are **pulled to local AND
-verified by load**, and the user has approved the cost-affecting action.
+(SKILL.md Phase 5) holds unchanged: NO release/return/destroy until the canonical remote is restored into an
+independent temporary consumer, bytes/SHA-256 match, checkpoints safely load, full-prediction metrics
+recompute, and the user has approved the cost-affecting action. The consumer may be remote.
 
 | Platform | Meter-stop verb | What it preserves | Cost trap |
 |---|---|---|---|
@@ -191,7 +192,7 @@ verified by load**, and the user has approved the cost-affecting action.
 (`/home/user/datadisk`, block storage, bought in 200 G / 500 G specs) bills hourly from *creation* until
 *destroyed*, even while the workspace is stopped — `工作空间停止运行，未销毁的数据盘也将持续计费` (verified
 docs.lanrui.co storage + lanrui.co/pricing 2026-06). So a stopped LanRui workspace keeps a meter running. To
-actually stop all billing: stop the workspace AND destroy the 数据盘 (after the Iron-Law pull+verify). The 网盘
+actually stop all billing: stop the workspace AND destroy the 数据盘 (after the Iron-Law restore+verify). The 网盘
 (10 GB free, 0.15 元/GB·月 overage) persists separately. Contrast: on Matpool/Gpushare/Featurize,
 release/return/归还 ends compute billing and the persistent volume simply survives (Gpushare /hy-netdisk and
 /hy-nas bill per-GB but are not destroyed by stopping).

@@ -124,9 +124,13 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
   K = `min(100, N_test)`. Do not add `latest.pth`, redundant
   `COMPLETE.json`/`MANIFEST.json` status sentinels, dataset bytes, top-level `config/`/`results/`/`vis/`,
   caches, general logs, full tracker state, or a default montage.
-- [ ] Bind each fixed per-test-set `selection_id` and its canonical
-  `_trust/selections/<selection-id>.json` path/hash in `run.json`; do not embed a second selection manifest or
-  legacy visualization index in the export.
+- [ ] Bind each versioned per-test-set `selection_id` and its one manifest path/hash in `run.json`. Preserve
+  schema-2 `all`/`fixed_model_blind` under `_trust/selections/`. For schema 3, accept a safe project-relative
+  manifest only when it binds MNIST test K=512 clean float32, the exact ranking model/config/checkpoint, and
+  the complete unrounded reconstruction-PSNR source hash/population; enforce descending PSNR, sample-ID tie
+  order, K=`min(100,N_test)`, and one ordered roster across all methods, conditions, and three tasks. Keep
+  full-test metrics full-population, restrict the ranked roster to qualitative examples, and give no-GT
+  tests a separate explicit non-PSNR roster. Do not embed a second manifest or legacy visualization index.
 - [ ] Never place real capture/hardware results inside software `export/<run-id>`. If this compute produced
   hardware output, hand capture/decode/model-run bindings to `research-artifact-hygiene` or build an
   independent `export/.partial/hardware/<hardware-run-id>` capsule containing `run.json` plus mandatory
@@ -141,8 +145,10 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
   Route it to `supervise-research-closeout` for read-only legacy acceptance, and apply this export contract
   only to newly closed outputs.
 - [ ] Validate the capsule contract owned by `research-artifact-hygiene`, including safe checkpoint load,
-  exact canonical keys, required paths/visual coverage, and full isomorphism with local canonical
-  `runs/<run-id>`. `run.json` must contain no full-file roster, byte-size table, or payload-hash inventory.
+  exact canonical keys and required paths/visual coverage. `run.json` must contain no redundant full-file
+  roster. After remote custody is verified, the author tree may retain a thin logical `runs/<run-id>` whose
+  checkpoint/results records carry URI, SHA-256, bytes, provider, mutability, verification date, and
+  independent consumer evidence; it need not retain a Mac `.pth`.
   If the destination does not exist, atomically rename `export/.partial/<run-id>` to `export/<run-id>` on
   the same filesystem.
 - [ ] On any closeout failure, preserve the failed partial under `quarantine/<run-id>--<attempt-id>` with
@@ -153,27 +159,31 @@ hardcodes a mount, verb, or proxy. Each phase ends in the runnable check from `S
   checks, the external frozen manifest and live exact-roster/byte/hash validation, transfer,
   remote/readback verification, and restore evidence. That manifest stays outside the canonical run. Never mirror
   `active/` as a whole or pass the project root, `cache/`, or `export/.partial/` as the source.
-- [ ] Build the pull manifest the teardown gate consumes: write an explicit UTF-8 expected-roster file
+- [ ] Only when the declared consumer is local or the user requests a materialized local copy, build the pull manifest: write an explicit UTF-8 expected-roster file
   from the sealed `export/<run-id>` (one result path per line, never embedded in canonical `run.json`),
   then run `scripts/aggregate_to_fs.sh` with `RUN_ID` and `EXPECTED_ROSTER_FILE` — it checked-syncs every
   required file into the durable root and builds `PULL_MANIFEST.json`. A count alone is not completeness
   evidence, and the mirror workflow does NOT produce this manifest — its custody manifest is a separate,
   additional layer over the same sealed export.
-- [ ] Pull with `scripts/download_loop.sh` (or the manifest-bound transport selected above); it always lets
+- [ ] For that local-delivery branch, pull with `scripts/download_loop.sh` (or the manifest-bound transport selected above); it always lets
   rsync compare/resume and never skips a directory because it is merely large.
-- [ ] Require the loop's final `PULL VERIFIED` line and local `PULL_VERIFIED.json`. This proves exact
-  roster, byte sizes, SHA-256, metrics JSON, and checkpoint load. Re-pull + re-verify any error.
+- [ ] Otherwise restore/read back from the canonical remote directly into an independent temporary consumer
+  location, which may be another rented node. Verify every roster entry/byte/SHA-256 there, safely load the
+  checkpoint, and recompute every reported metric from the full prediction population. Persist the compact
+  consumer evidence in the thin logical record. `PULL_VERIFIED.json` is one local transport receipt and is
+  not a universal custody requirement.
 - [ ] Record disclosable run facts for the paper: CLI overrides, source/data/split identities, tracker
   summary URL, acceptance id, and custody status. A tracker URL is provenance, not the result bundle.
 - [ ] ONLY THEN perform the *profile meter-stop verb*, AFTER explicit user approval of the specific cost-affecting action.
 
-> **verify:** a closed `export/<run-id>` exists, and `PULL_VERIFIED.json` binds the local bundle to the
-> generic mirror's external frozen manifest and canonical run id *before* teardown. A mirror/upload status
-> without live exact-roster validation is not a substitute.
+> **verify:** a closed `export/<run-id>` or thin logical run binds the canonical remote URI and provider
+> mutability to exact bytes/SHA-256 plus independent consumer readback, safe load, and full-prediction metric
+> recomputation *before* destructive teardown. A mirror/upload status alone is not a substitute.
 
 > **Iron Law — teardown gate:** NO `stop` / `release` / `terminate` / `destroy` / file-delete until
-> checkpoints match an explicit remote roster + SHA-256 manifest, are **pulled to local AND verified by
-> load**, `PULL_VERIFIED.json` exists, AND the user has explicitly approved the
+> checkpoints match an explicit remote roster + SHA-256 manifest, have been restored/read back into an
+> **independent temporary consumer and verified by safe load plus full-prediction metric recomputation**,
+> AND the user has explicitly approved the
 > cost-affecting action. "It looked done in the log" is not evidence (principle #3). On most platforms the
 > meter-stopping verb is **irreversible** (deletes the disk) — confirmation matters *more*, not less. The
 > general form may be reinforced by a separate verification-before-completion companion when installed;
@@ -197,8 +207,9 @@ the action that does is usually irreversible** (principle #4/#9).
 | **cancel durable storage subscription** | Storage cost only | Nothing | **No — irreversible**, all durable data lost |
 
 **Default conservative plan:** stop/release the GPU instance first (immediate $ saving, low risk once
-artifacts are verified-local). Keep durable storage 1–3 months until the paper is submitted. Cancel the
-durable subscription LAST, only after the local copy is verified and the user approves.
+artifacts pass independent-consumer restore and semantic verification). Keep durable storage 1–3 months
+until the paper is submitted. Cancel the durable subscription LAST, only after that verification and the
+user's explicit approval.
 
 ---
 
@@ -208,7 +219,7 @@ Categorize before reacting; retry the **identical** config — hand-patching one
 (principle #7; **references/verifying/methodology.md** owns is-it-a-bug-or-real).
 
 - [ ] **Probabilistic** (epoch-1 stall, transient `wandb.init` blip, spot preemption): queue a retry with the SAME config, no safeguards. Resume works because of checkpoint-load (principle #8).
-- [ ] **Disk-full** (exit 1 + `iostream` / "No space left"): prune the *profile scratch* (`SCRATCH=` — periodic checkpoints, unused caches), keep `best`; if cleanup can't free enough, **ask to expand the disk**, never silently shrink the experiment (principle #9). Then retry.
+- [ ] **Disk pressure/full** (>=90%, below frozen floor, `iostream`, inode/full): stop new writers; audit the resolved mount and live writers; reclaim only allowlisted proven-regenerable task scratch with a receipt; mirror valuable portable outputs and restore/semantic-verify before cleanup eligibility; remeasure. If still short, report exact shortfall, expansion target and restart requirement. Never silently shrink the experiment or delete active/unknown/research-bearing paths (principle #9). Then retry once only when the root cause is closed.
 - [ ] **Real bug** (CUDA OOM, code error, all-zero metric): stop, investigate code — do NOT retry blindly.
 
 > Symptom → root cause → fix for each, plus the full catalog: `references/run-remote/gotchas_universal.md`

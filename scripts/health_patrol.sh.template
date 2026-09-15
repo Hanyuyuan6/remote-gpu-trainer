@@ -4,13 +4,81 @@
 # Fire on a cadence from the host's recurring runner (Claude Code `/loop 30m`; cron
 # `3,33 * * * *` — offset off :00/:30 to dodge platform load spikes; Codex/Cursor
 # Automations → references/run-remote/monitoring_patterns.md §7). This is the §3 **L2 patrol** body:
-# one combined ssh round-trip → a decision → a 3-5 line report EVEN IF nothing changed.
+# one combined ssh round-trip → a decision. Set PATROL_STATE and PATROL_RUN_ID for
+# a machine-owned pre-model filter: unchanged ticks emit nothing; changed state emits
+# a compact report. A model-scheduled /loop or heartbeat has ALREADY paid for that
+# model call; suppressing its reply does not save the call. Bind this filter outside it.
 #
-# READ-ONLY: never edits, restarts, or deletes anything (principles #6/#9). Watches
+# REMOTE READ-ONLY: never edits, restarts, or deletes remote work. Optional PATROL_STATE
+# is one caller-owned local state file plus a lock, updated atomically. Watches
 # LIVENESS only; to make the RESULT outlive the box, pair with an on-box L1 self-
 # completion chain (§3 L1). Exit 0 = healthy / in-progress / cleanly done;
-# exit 1 = ESCALATE ("崩了") so the loop/cron surfaces the tick loudly.
+# exit 1 = NEW escalation; with PATROL_STATE, exit 0 may mean an unchanged alert,
+# NOT healthy. State records current health. Exit 2 = filter/probe validation failure,
+# always visible. No scheduler, model API, or notification service is installed here.
 set -u
+PATROL_STATE="${PATROL_STATE:-}"
+PATROL_RUN_ID="${PATROL_RUN_ID:-}"
+
+# Dispatch on nonempty stdout, before invoking a model. Store state outside provider
+# sessions/databases. A new run needs a new stable RUN_ID even when paths are reused.
+finish() {
+  local status="$1" reasons="$2" detail="$3"
+  local summary="PATROL $HOST: proc=${ALIVE:-?} done=${DONE:-?}/${N_TOTAL} epoch=${EPOCH:-n/a} disk=${DISK:-?} inode=${INODE:-?}"
+  if [ -z "$PATROL_STATE" ]; then
+    printf '%s\n%s\n' "$summary" "$detail"
+    [ "$status" = "alert" ] && return 1
+    [ "$status" = "unknown" ] && return 1
+    return 0
+  fi
+  python3 - "$PATROL_STATE" "$PATROL_RUN_ID" "$HOST" "$RUN_LOG" "$RESULT_DIR" "$RUN_GLOB" "$N_TOTAL" "$status" "$reasons" "${DONE:-}" "${EPOCH:-}" "$summary" "$detail" <<'FILTER'
+import datetime, json, os, pathlib, stat, sys, tempfile
+path, run_id, host, log, result, process, total, status, reasons, done, epoch, summary, detail = sys.argv[1:]
+try:
+    target = pathlib.Path(path)
+    if not run_id or not target.is_absolute() or not target.parent.is_dir():
+        raise ValueError('absolute PATROL_STATE with existing parent and unique PATROL_RUN_ID required')
+    identity = [run_id, host, log, result, process, total]
+    signature = [status, reasons, done]  # Epoch/disk noise is not a material transition.
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0)
+    with os.fdopen(os.open(str(target) + '.lock', flags, 0o600), 'r+') as lock:
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            raise ValueError('state lock is not a regular file')
+        if os.name == 'nt':
+            import msvcrt
+            # Windows permits a byte-range lock beyond EOF; closing releases it.
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        previous = None
+        if target.is_symlink():
+            raise ValueError('state must not be a symlink')
+        if target.exists():
+            previous = json.loads(target.read_text(encoding='utf-8'))
+            if not isinstance(previous, dict) or previous.get('schema') != 1 or not isinstance(previous.get('identity'), list) or not isinstance(previous.get('signature'), list):
+                raise ValueError('invalid state schema; reconcile state before reuse')
+        changed = previous is None or previous['identity'] != identity or previous['signature'] != signature
+        state = {'schema': 1, 'identity': identity, 'signature': signature, 'status': status,
+                 'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 'last_epoch': epoch, 'summary': summary, 'detail': detail}
+        name = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=target.parent, prefix='.patrol-', delete=False) as handle:
+                name = handle.name
+                json.dump(state, handle, ensure_ascii=False)
+                handle.write('\n'); handle.flush(); os.fsync(handle.fileno())
+            os.replace(name, target)
+        finally:
+            if name and os.path.exists(name): os.unlink(name)
+    if changed:
+        print(summary); print(detail)
+    sys.exit(1 if changed and status in ('alert', 'unknown') else 0)
+except Exception as error:
+    print('PATROL FILTER UNVERIFIED: ' + str(error))
+    sys.exit(2)
+FILTER
+}
 
 # ── PROFILE BLOCK — bind from profiles/<platform>.md §8 SCRIPT OVERRIDES ────────────────
 HOST="${HOST:-autodl-1}"                                    # ssh alias (profile §1)
@@ -35,33 +103,39 @@ echo "CRASH=$(grep -hE "$CRASH_RE" "$RUN_LOG" 2>/dev/null | wc -l)"   # ‡ scop
 echo "DISK=$(df -h "$DATA_MOUNT" 2>/dev/null | awk 'NR==2{print $5}')"
 echo "INODE=$(df -i "$DATA_MOUNT" 2>/dev/null | awk 'NR==2{print $5}')"
 REMOTE
-)" || { echo "PATROL $HOST: ssh FAILED — only YOU can see the console (balance / power / preemption). Check it."; exit 1; }
+)" || { finish unknown ssh "PATROL $HOST: ssh FAILED; remote training state is unknown. Reconcile the connection before any repair."; exit $?; }
 
 # ── parse ──
-g(){ printf '%s\n' "$OUT" | sed -n "s/^$1=//p"; }
+g(){ printf '%s\n' "$OUT" | sed -n "s/^$1=//p" | sed "s/^[[:space:]]*//;s/[[:space:]]*$//"; }
 ALIVE=$(g ALIVE); DONE=$(g DONE); EPOCH=$(g EPOCH); CRASH=$(g CRASH); DISK=$(g DISK); INODE=$(g INODE)
 dp=${DISK%\%}; ip=${INODE%\%}
 
-# ── always report, even if nothing changed (§3-L2) ──
-echo "PATROL $HOST: proc=${ALIVE:-?} done=${DONE:-?}/${N_TOTAL} epoch=${EPOCH:-n/a} disk=${DISK:-?} inode=${INODE:-?}"
+# Missing/malformed evidence must never turn into a quiet healthy default.
+if ! [[ "$ALIVE" =~ ^[0-9]+$ && "$DONE" =~ ^[0-9]+$ && "$CRASH" =~ ^[0-9]+$ && "$dp" =~ ^[0-9]+$ && "$ip" =~ ^[0-9]+$ && "$N_TOTAL" =~ ^[0-9]+$ && "$DISK_PCT_MAX" =~ ^[0-9]+$ ]]; then
+  finish unknown malformed "PATROL UNVERIFIED: required probe/config fields are missing or nonnumeric."
+  exit $?
+fi
 
 # ── escalate? crash signature / disk / inode / process-gone-while-incomplete ──
-esc=0; why=""
-[ "${CRASH:-0}" -gt 0 ] 2>/dev/null            && { esc=1; why="crash x${CRASH} in $(basename "$RUN_LOG")"; }
-[ "${dp:-0}" -ge "$DISK_PCT_MAX" ] 2>/dev/null && { esc=1; why="${why:+$why; }disk ${DISK}"; }
-[ "${ip:-0}" -ge "$DISK_PCT_MAX" ] 2>/dev/null && { esc=1; why="${why:+$why; }inodes ${INODE}"; }
+esc=0; why=""; reasons=""
+[ "${CRASH:-0}" -gt 0 ] 2>/dev/null            && { esc=1; reasons="${reasons}crash,"; why="crash x${CRASH} in $(basename "$RUN_LOG")"; }
+[ "${dp:-0}" -ge "$DISK_PCT_MAX" ] 2>/dev/null && { esc=1; reasons="${reasons}disk,"; why="${why:+$why; }disk ${DISK}"; }
+[ "${ip:-0}" -ge "$DISK_PCT_MAX" ] 2>/dev/null && { esc=1; reasons="${reasons}inodes,"; why="${why:+$why; }inodes ${INODE}"; }
 if [ "${ALIVE:-0}" -eq 0 ] 2>/dev/null && [ "${N_TOTAL:-0}" -gt 0 ] && [ "${DONE:-0}" -lt "$N_TOTAL" ] 2>/dev/null; then
-  esc=1; why="${why:+$why; }process gone at ${DONE}/${N_TOTAL} (incomplete)"
+  esc=1; reasons="${reasons}incomplete,"; why="${why:+$why; }process gone at ${DONE}/${N_TOTAL} (incomplete)"
 fi
 
 if [ "$esc" -eq 1 ]; then
-  echo "PATROL: 崩了 — ${why}. Triage: ssh $HOST \"grep -B2 -A20 -E 'Traceback' '$RUN_LOG' | head -50\" (§6). Do NOT blind-restart; classify → fixed remediation."
-  exit 1
+  finish alert "$reasons" "PATROL: 崩了 — ${why}. Read only the relevant per-run failure evidence; do NOT blind-restart."
+  exit $?
 fi
-if [ "${N_TOTAL:-0}" -gt 0 ] && [ "${DONE:-0}" -ge "$N_TOTAL" ] 2>/dev/null && [ "${ALIVE:-0}" -eq 0 ] 2>/dev/null; then
-  echo "PATROL: all ${N_TOTAL} done, process exited → load-verify + pull, THEN teardown (SKILL.md Phase 5 Iron Law)."; exit 0
+if [ "$N_TOTAL" -gt 0 ] && [ "$DONE" -ge "$N_TOTAL" ] && [ "$ALIVE" -eq 0 ]; then
+  finish done complete "PATROL: all ${N_TOTAL} present, process exited → verify the actual artifacts and pull before teardown. Counts alone do not prove valid results."
+  exit $?
 fi
-if [ "${ALIVE:-0}" -eq 0 ] 2>/dev/null && [ "${N_TOTAL:-0}" -eq 0 ]; then
-  echo "PATROL: process not running and completion-grading off — set N_TOTAL to auto-classify, or verify by hand."; exit 0
+if [ "$ALIVE" -eq 0 ] && [ "$N_TOTAL" -eq 0 ]; then
+  finish unknown ungraded "PATROL: process not running and completion-grading off — set N_TOTAL or verify by hand."
+  exit $?
 fi
-echo "PATROL: healthy / in progress — nothing to do."; exit 0
+finish running progress "PATROL: healthy / in progress — nothing to do."
+exit $?

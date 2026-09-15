@@ -109,7 +109,7 @@ Two purchase modes, two distinct interruption vectors:
 - **Billing granularity:** compute + container/volume disk bill **per second**; Network Volumes bill **hourly** (verified docs.runpod.io/references/billing-information 2026-06).
 - Savings Plans are prepaid 3- or 6-month non-refundable commitments — a separate billing knob, orthogonal to stop/terminate.
 
-> **Teardown Iron Law (SKILL.md Phase 5):** NO `terminate` until checkpoints are **pulled to local OR confirmed present on a Network Volume, AND verified by load**, and the user has explicitly approved the cost-affecting action. On RunPod the meter-stop verb is irreversible by design and there is **no backup safety net** (low-balance deletion above) — "it looked done in the log" is not evidence (principle #3). Cross-link: superpowers:verification-before-completion **REQUIRED**.
+> **Teardown Iron Law (SKILL.md Phase 5):** NO `terminate` until the canonical remote is restored into an independent temporary consumer, exact roster/bytes/SHA-256 match, the checkpoint safely loads, full-prediction metrics recompute, and the user explicitly approves the cost-affecting action. A Network Volume may be the canonical remote but is not its own independent readback; the consumer may be another remote node. On RunPod the meter-stop verb is irreversible by design and there is **no backup safety net** (low-balance deletion above) — "it looked done in the log" is not evidence (principle #3). Cross-link: superpowers:verification-before-completion **REQUIRED**.
 
 ---
 

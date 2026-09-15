@@ -15,7 +15,9 @@
 #
 # The remote bundle MUST contain PULL_MANIFEST.json, created with
 # build_pull_manifest.py after final aggregation. This script finishes by running
-# verify_local.py; only its PULL_VERIFIED.json marker can satisfy the teardown gate.
+# verify_local.py; its PULL_VERIFIED.json marker closes this materialized-local
+# delivery branch. The universal teardown gate may instead use a different
+# independent temporary consumer as defined by SKILL.md Phase 5.
 set -uo pipefail
 
 LOCAL_TARGET="${LOCAL_TARGET:-/path/to/local/final_ckpts}"

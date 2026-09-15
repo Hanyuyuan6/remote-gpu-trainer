@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify integrity and remote provenance of downloaded checkpoint directories.
+"""Verify one materialized-local delivery of checkpoint directories.
 
 For each <name>/ in the target dir, check:
   - best.pth exists
@@ -8,9 +8,10 @@ For each <name>/ in the target dir, check:
   - best_metrics.json exists and is valid JSON
   - reports best epoch + main metric per ablation
 
-The default teardown gate requires ``PULL_MANIFEST.json`` in the result root.
-That manifest binds an immutable run id to the exact remote roster, sizes, and
-SHA-256 digests.  Success writes ``PULL_VERIFIED.json`` beside the data.
+This local-delivery branch requires ``PULL_MANIFEST.json`` in the result root.
+That manifest binds a run id to the exact remote roster, sizes, and SHA-256
+digests. Success writes ``PULL_VERIFIED.json`` beside the data. The universal
+teardown gate may use another independent temporary consumer instead.
 
 Usage:
     python verify_local.py <path_to_final_ckpts_dir> [--manifest PATH] [--expect N] [--list-metrics]

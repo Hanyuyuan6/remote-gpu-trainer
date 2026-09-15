@@ -156,12 +156,18 @@ byte-hog often hides where nobody looks: a **symlinked cache** (`~/.cache/huggin
 disk) can outweigh everything the run created.
 
 **Fix**: monitor `df -i`, not just `df -h`, in Phase 0 and every space check. **Audit the real mount with
-`du`, not assumptions** (`du -sh ~/.cache/huggingface/hub/models--* | sort -rh`). Clean by **value** — keep
-the tiny irreplaceable evidence (metric/eval JSONs), drop the large reproducible scratch (periodic
-checkpoints, unused caches). Cap per-sample eval visualization (cross-link references/verifying/methodology.md
-**REQUIRED** for the sizing policy). The *inode-cap number* is a profile fact (some platforms enforce a hard
-~200K cap; GB-quota'd platforms have none); the many-small-files general form is **shard into tar** (U25).
-Get explicit user confirmation naming `rm -rf` targets; offer "clean vs expand the disk" (principle #9).
+`du`, not assumptions** (`du -sh ~/.cache/huggingface/hub/models--* | sort -rh`). At >=90% use, stop starting
+new writers and compute the absolute `required + margin` floor; the percentage warns, the floor decides.
+Classify exact paths before cleanup: active/unknown/research-bearing stays protected; a proven-regenerable
+task-local cache/temp/failed stage may be reclaimed under a bounded allowlist after no-writer, regeneration
+and byte/inode-reclaim checks, with a thin deletion receipt. Valuable portable outputs move first to a fresh
+private prefix using `mirror-research-artifacts`; cleanup eligibility begins only after exact roster/bytes/SHA,
+independent restore and semantic load pass, and still follows current retention authority. Cap per-sample eval
+visualization (cross-link references/verifying/methodology.md **REQUIRED** for the sizing policy). The
+*inode-cap number* is a profile fact (some platforms enforce a hard ~200K cap; GB-quota'd platforms have
+none); the many-small-files general form is **shard into tar** (U25). If recovery cannot reach the frozen
+floor, report current free, floor, shortfall, recommended expansion and whether restart applies; never silently
+shrink the experiment or delete an unknown path.
 
 ### U8 — Stage hot data to local NVMe before training
 
