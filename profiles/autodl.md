@@ -304,6 +304,12 @@ replaces it with a wheel lacking the arch's kernels → `no kernel image is avai
 /root/req_remote.txt` — keep the image build; smoke `torch.cuda.get_device_capability()` + a heavy import
 before launch; disclose the off-band torch version with results.
 
+### 7.x Console boot / clone / import (measured 2026-08-31 … 2026-09-09 on real nodes; sunk from a project memory 2026-09-15)
+
+- **"Boot failed" is usually not your mistake.** The dialog 「该主机空闲GPU不足 / 主机GPU空闲数量 0 卡」 means the *host* is fully booked by other tenants. Two exits: **克隆实例** (the platform places the clone on a host with free GPUs; same region only; the source instance is untouched), or the 「无卡模式开机」 link inside that same dialog when you only need the disk (rendering, packaging, exports).
+- **The clone dialog ticks the system disk only.** The project lives on the data disk, so tick 数据盘 by hand before confirming (the resulting URL carries `copy_data_disk=1`); a clone without it boots into an empty workspace.
+- **Run scripts with `PYTHONPATH=<project root>`.** An editable install's `.pth` may point at a stale copy of the repo; `python -c "import src"` from the project root passes (cwd is `sys.path[0]`), while `python scripts/x.py` puts `scripts/` first and `import src.*` resolves to the stale copy → ImportError. Test under the exact condition the job runs under, not a friendlier one.
+
 ## 8. SCRIPT OVERRIDES
 
 The AutoDL mount binding. Set `<project>` and `<run-id>` from the run contract before parameterizing any
