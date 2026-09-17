@@ -5,10 +5,7 @@ name: evals
 # the skill's stdlib-only contract, so the guard runs on a clean runner in seconds.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

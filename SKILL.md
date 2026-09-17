@@ -1,7 +1,6 @@
 ---
 name: "remote-gpu-trainer"
-description: >-
-  交付可验证的远程 GPU 运行状态、selection-best checkpoint 和拉回结果，适用于 AutoDL、vast.ai、RunPod、Lambda 或 Paperspace 的启动、调试、监控、续训、多开并行、停止及 OOM/NaN/全零指标排查；常见请求：训练卡住；释放实例会销毁机器及数据盘，绝不等同于关机。长期镜像与恢复交给 mirror-research-artifacts。
+description: "AutoDL/vast.ai/RunPod/Lambda/Paperspace远程GPU启动、调试、监控、续训、并行、停止及卡住/OOM/NaN/全零指标排查；可验证状态/selection-best checkpoint/拉回结果。释放实例销毁机器及数据盘，不等同关机。长期镜像/恢复→mirror-research-artifacts。"
 license: MIT
 metadata:
   last-model-review: "2026-09-15 consolidation: one canonical home per rule; private, dated, and duplicated material removed"
