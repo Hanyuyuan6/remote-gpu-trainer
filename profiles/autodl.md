@@ -310,6 +310,39 @@ before launch; disclose the off-band torch version with results.
 - **The clone dialog ticks the system disk only.** The project lives on the data disk, so tick 数据盘 by hand before confirming (the resulting URL carries `copy_data_disk=1`); a clone without it boots into an empty workspace.
 - **Run scripts with `PYTHONPATH=<project root>`.** An editable install's `.pth` may point at a stale copy of the repo; `python -c "import src"` from the project root passes (cwd is `sys.path[0]`), while `python scripts/x.py` puts `scripts/` first and `import src.*` resolves to the stale copy → ImportError. Test under the exact condition the job runs under, not a friendlier one.
 
+### 7.y Console API, Jupyter channel, transfers (sunk from a project ops memory 2026-09-24)
+
+- **Drive the console through its API, not screenshots.** In the logged-in console tab, the page's own
+  token (localStorage `token`, sent as the `Authorization` header; never print or store it) authorizes
+  `POST /api/v1/instance` (list: status, `ssh_port`) and `POST /api/v1/instance/power_on` /
+  `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. A no-GPU
+  boot did not start through the API in four request shapes; use the row's 「无卡模式开机」 instead.
+- **Never click a menu item by remembered coordinates.** The last entry of 「更多」 is 「释放实例」, which
+  destroys the instance and its data disk (a near miss on 2026-09-06: the red confirmation does not
+  close on Escape). Find entries by their text on a fresh read of the page.
+- **When SSH is down, use the Jupyter channel from a light `/jupyter/tree` page** (the Lab page stalls
+  under streaming terminal output): files through the contents API (`PUT /jupyter/api/contents/<path>`
+  with the `_xsrf` cookie in `X-XSRFToken`; read back with `cache:"no-store"` plus a timestamp, or a
+  cached GET looks like a failed write), Python through a kernel channel, a shell through
+  `wss://…/jupyter/terminals/websocket/<n>`. A PTY line longer than 4096 bytes is silently corrupted:
+  send payloads in chunks of at most about 2.4 KB.
+- **Measure the line before a big pull.** Cross-border links degrade at random within a day (single
+  streams from 0.26 to 5.5 MB/s; six or more parallel streams get throttled to zero; a connection
+  dies after about 10 minutes or 1.5 GB). Run a 75-second speed probe: at 3 MB/s or more, pull now in
+  Range segments of about 455 MB, check each segment's size, restart a failed segment from scratch
+  (no `-C -`), and trust only the SHA-256 of the joined file; under 1 MB/s, shut the node down and
+  wait, since idle billing costs more than a cold start. A `~/.curlrc` breaker such as 1 MB/s for
+  20 s is for one stream only; with parallel streams it kills every stream in turn.
+- **"Full size" is not "done".** Two writers racing on one path interleave into a full-size corrupt
+  file; `pkill -f <parent>` misses a child such as `bash fetch.sh`, so kill by the real process name;
+  `ps` in a PTY cuts command lines at about 80 columns, so do not count live downloads by grepping
+  it. A disk at 100% looks like a network failure: `df` first.
+- **macOS `/usr/bin/rsync` is openrsync** and rejects GNU options such as `--info=stats2`; use
+  Homebrew's `rsync` on the Mac side.
+- **Close out what you start.** The boot notice names the shutdown condition and who shuts down; a
+  node waiting on the user is shut down first; "shutting down soon" is either done now or backed by a
+  watcher whose first hop has been read.
+
 ## 8. SCRIPT OVERRIDES
 
 The AutoDL mount binding. Set `<project>` and `<run-id>` from the run contract before parameterizing any

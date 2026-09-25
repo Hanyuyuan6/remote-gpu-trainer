@@ -155,6 +155,14 @@ de-collapse head; a signature that survives every architecture change is an inpu
 val-collapsed is a per-split input mismatch; kill a collapsing run in epoch 1. Full worked diagnosis →
 `references/verifying/representation-collapse.md`.
 
+**Blank-input control (the prior's floor).** For a model that reconstructs from measurements, run it on a
+blank measurement once per (model, sampling setting): after normalization a zero measurement is a constant
+input, so the output is the model's unconditional prior, independent of which acquisition it came from.
+A prior alone can score well on shape-regular data and can even beat a real but noisy measurement, so an
+absolute score does not show the input was used: report measurement score minus blank-input score, choose
+any gain or scale by that difference (one value per acquisition group, never per sample or against ground
+truth), and keep the blank outputs as a reference row beside the real ones.
+
 ## 9. Metric & statistical integrity (principle 5)
 
 A number without variance or a fair metric is not yet evidence:
