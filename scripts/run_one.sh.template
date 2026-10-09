@@ -29,6 +29,9 @@ DURABLE_DIR="${DURABLE_DIR:-/root/autodl-fs}"                # survives teardown
 PROXY_HOOK="${PROXY_HOOK:-source /etc/network_turbo}"        # network-accel hook; ":" (no-op) on a clean box
 CRED_FILE="${CRED_FILE:-/root/.wandb_key}"                   # file holding the tracker key; "" if WANDB_API_KEY already in env
 PY="${PY:-python}"                                           # explicit profile interpreter; AutoDL uses /root/miniconda3/bin/python
+DEADMAN_SECONDS="${DEADMAN_SECONDS:-}"                       # planned runtime x 1.5 + pull window, or "off:<reason>"
+SHUTDOWN_CMD="${SHUTDOWN_CMD:-/bin/sh /usr/bin/shutdown -h now}"  # verified provider stop that keeps disks (AutoDL 关机)
+DEADMAN_DIR="${DEADMAN_DIR:-${HOME:-/root}}"                 # where deadman.pid / deadman.log live
 # =======================================================================================
 
 # PROXY_HOOK is an OPERATOR-supplied snippet from your platform profile (e.g. `source /etc/network_turbo`,
@@ -38,6 +41,23 @@ if ! eval "${PROXY_HOOK}" 2>/dev/null; then
     echo "PROFILE SETUP FAILED: PROXY_HOOK returned non-zero" >&2
     exit 1
 fi
+
+# Dead-man timer: stop a forgotten node once the planned runtime has clearly passed (one is armed per
+# node; later jobs reuse it). Shadow mode until 2026-10-15: a missing duration only warns; after that
+# date the template refuses to start without DEADMAN_SECONDS or an explicit off:<reason>.
+case "$DEADMAN_SECONDS" in
+    off:?*) echo "dead-man timer disabled: ${DEADMAN_SECONDS#off:}" >&2 ;;
+    ''|*[!0-9]*) echo "PREFLIGHT WARNING (shadow): set DEADMAN_SECONDS to planned runtime x 1.5 + pull window, or DEADMAN_SECONDS=off:<reason>" >&2 ;;
+    *) if [ "$DEADMAN_SECONDS" -lt 600 ]; then
+           echo "PREFLIGHT WARNING: DEADMAN_SECONDS=$DEADMAN_SECONDS is under 10 minutes; timer not armed" >&2
+       elif [ -f "$DEADMAN_DIR/deadman.pid" ] && kill -0 "$(cat "$DEADMAN_DIR/deadman.pid")" 2>/dev/null; then
+           echo "dead-man timer already armed (pid $(cat "$DEADMAN_DIR/deadman.pid"))" >&2
+       else
+           nohup /bin/sh -c "sleep $DEADMAN_SECONDS; $SHUTDOWN_CMD" >"$DEADMAN_DIR/deadman.log" 2>&1 &
+           echo $! > "$DEADMAN_DIR/deadman.pid"
+           echo "dead-man timer armed: shutdown in ${DEADMAN_SECONDS}s (pid $(cat "$DEADMAN_DIR/deadman.pid"))" >&2
+       fi ;;
+esac
 # The prebuilt base IS the env on most rentals (do not conda create). Activate if present.
 source /root/miniconda3/etc/profile.d/conda.sh 2>/dev/null && conda activate base 2>/dev/null || true
 "$PY" --version >/dev/null 2>&1 || { echo "PY interpreter is unavailable: $PY" >&2; exit 1; }

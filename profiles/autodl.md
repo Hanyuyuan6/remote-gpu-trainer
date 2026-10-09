@@ -196,6 +196,13 @@ The generic `mirror-research-artifacts` workflow owns the external frozen manife
 validation, and readback evidence; a local `PULL_VERIFIED.json` is one optional delivery receipt and none
 belongs in canonical `run.json`.
 
+**Dead-man timer.** 关机 keeps every tier, so a timer that stops a forgotten node is safe here. Arm it
+right after the run starts, through the verified wrapper below, for example
+`nohup /bin/sh -c 'sleep <seconds>; /bin/sh /usr/bin/shutdown -h now' >/root/deadman.log 2>&1 & echo $! > /root/deadman.pid`,
+with `<seconds>` = planned runtime × 1.5 + pull window. Extend by killing the PID and re-arming; cancel
+only after the post-pull shutdown is done. A stop during training is recoverable from the last
+checkpoint; an idle meter is not.
+
 **Container shutdown wrapper.** Some AutoDL images expose `/usr/bin/shutdown` as a short provider-owned
 ASCII shell wrapper with no shebang rather than an ELF binary. An interactive shell handles `ENOEXEC` by
 running such a file through `/bin/sh`, but Python `subprocess.Popen(["shutdown", "-h", "now"], shell=False)`

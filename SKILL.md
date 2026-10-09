@@ -122,6 +122,8 @@ another remote node; a resident Mac `.pth` and local `PULL_VERIFIED.json` are no
 Keep a thin logical record with URI, SHA-256, bytes, provider, mutability, verification date, and the bound
 consumer evidence. Current explicit authority still determines the provider action.
 
+- **Dead-man timer at boot** where shutdown keeps disks (AutoDL 关机): set `DEADMAN_SECONDS` (planned runtime × 1.5
+  + pull window) for `scripts/run_one.sh.template`; after pull and hash checks, shut down and read back the stop.
 - **Shutdown** may stop compute while preserving provider disks; it does not imply release.
 - **Release/terminate/destroy** may delete storage or continue billing differently; verify current provider
   facts from its profile and obtain current L3 authority.
