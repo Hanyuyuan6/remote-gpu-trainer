@@ -19,6 +19,11 @@ this verbatim; it is identical across every CN platform.
 | **HuggingFace** | `export HF_ENDPOINT=https://hf-mirror.com` | drop-in reverse proxy — identical repo IDs, identical `hf download` / `from_pretrained` calls |
 | **Alt model hub** | ModelScope CLI / SDK | `pip install modelscope`; `modelscope download <id>` or `snapshot_download(id, ...)` — often hosts the same Qwen / GLM / Llama weights domestically |
 
+**Never send an HF token to a mirror.** `huggingface_hub` sends `HF_TOKEN` or the cached login token as an
+`Authorization` header to whatever host `HF_ENDPOINT` names, public downloads included, and hf-mirror is a third
+party: for a mirror download set `HF_HUB_DISABLE_IMPLICIT_TOKEN=1` (or pass `token=False`) and give no token;
+private repos and Buckets use the official endpoint (on AutoDL behind `/etc/network_turbo`).
+
 **conda trap — NEVER mirror `pytorch-nightly`.** TUNA (and every CN Anaconda mirror) syncs the stable
 `pytorch` channel but **does not carry `pytorch-nightly`** — pointing the nightly channel at a mirror
 silently resolves to a stale or absent build. Install nightly only from the official channel (over a real

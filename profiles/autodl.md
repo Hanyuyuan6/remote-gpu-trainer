@@ -220,7 +220,7 @@ partial body.
 
 ## 6. DAEMON TOOL
 
-**tmux** is the detach primitive when present, but **tmux is often NOT installed on a fresh AutoDL image**
+**tmux** is the detach primitive when present, but **tmux and the SFTP subsystem are often NOT installed on a fresh AutoDL image** (copy with `scp -O`)
 and `apt-get install tmux` fails when egress is down. Zero-dependency fallback:
 `nohup bash run_queue.sh queue.txt </dev/null >master.log 2>&1 &` — survives an SSH drop (SIGHUP), needs
 no package. Verify either with `pgrep -af <script>`. The detach survives an SSH drop; it does **not**
@@ -322,11 +322,16 @@ before launch; disclose the off-band torch version with results.
 - **Drive the console through its API, not screenshots.** In the logged-in console tab, the page's own
   token (localStorage `token`, sent as the `Authorization` header; never print or store it) authorizes
   `POST /api/v1/instance` (list: status, `ssh_port`) and `POST /api/v1/instance/power_on` /
-  `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. A no-GPU
+  `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. Identify a box by its full `instance_uuid` and name tag, never by a uuid prefix or by whether SSH connects. A no-GPU
   boot did not start through the API in four request shapes; use the row's 「无卡模式开机」 instead.
 - **Never click a menu item by remembered coordinates.** The last entry of 「更多」 is 「释放实例」, which
   destroys the instance and its data disk (a near miss on 2026-09-06: the red confirmation does not
   close on Escape). Find entries by their text on a fresh read of the page.
+- **Install a non-SSH control channel at deploy time and self-test it before relying on it.** From some operator
+  networks SSH stalls in the banner exchange and JupyterLab (8443) hangs, while HTTPS to Hugging Face works from
+  both ends (2026-10-11/13). A Bucket mailbox kept two nodes controllable without a hotspot: the node polls for a
+  request naming a SHA-256-checked bundle with word-only arguments, holds on failure (token and mailbox stay), and
+  writes its log under a prefix the operator can fetch; delete it with the token at closure.
 - **When SSH is down, use the Jupyter channel from a light `/jupyter/tree` page** (the Lab page stalls
   under streaming terminal output): files through the contents API (`PUT /jupyter/api/contents/<path>`
   with the `_xsrf` cookie in `X-XSRFToken`; read back with `cache:"no-store"` plus a timestamp, or a

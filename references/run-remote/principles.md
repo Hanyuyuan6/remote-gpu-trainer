@@ -17,7 +17,8 @@ discipline applies: don't hold an allocation idle.
 
 ## 2. Cheap checks before expensive compute
 
-A CPU smoke (1–2 batches, logger disabled, tiny shapes) kills import errors, config drift, tensor-shape
+A CPU rehearsal (the exact launch command on tiny data through every lifecycle point; a 1–2 batch smoke let
+three restarts through on 2026-10-11) kills import errors, config drift, tensor-shape
 and measurement-**scale** bugs for ~free, **before** they bill GPU-hours. It is *necessary, not
 sufficient* — it won't catch convergence — but it catches the dumb-and-expensive failures that otherwise
 only surface after an instance spins up.

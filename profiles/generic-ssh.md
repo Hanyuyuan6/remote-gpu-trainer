@@ -36,7 +36,7 @@ connection, and make the result survive the session ending** — checkpoint-to-d
   control channel (this is what makes the box "generic"). Set the alias per `references/run-remote/ssh_transport.md`.
 - **Push code:** `rsync -avz --partial ./proj/ gpu-box:~/proj/` — resumable, delta-only on re-syncs;
   prefer over `scp` (a reset `scp` restarts from zero). Pull results the same way, reversed.
-- **Download weights/datasets ON the box**, not over the local uplink: `ssh gpu-box 'cd ~/proj &&
+- **Download weights/datasets ON the box** unless a measured probe shows the local leg is faster (entrypoint step 9): `ssh gpu-box 'cd ~/proj &&
   hf download <repo> --local-dir data'` (or `aws s3 cp`, `wget`). The box almost always has a fatter,
   cheaper pipe to HF/S3 than a home connection — pushing a 50 GB checkpoint over a residential uplink
   is the classic self-inflicted stall. Use `huggingface-skills:hf-cli` when installed; otherwise use

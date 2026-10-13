@@ -51,7 +51,8 @@ sections, and skip any phase already done.
 
 - [ ] Mint one unique `<run-id>`. Bind source/config/dataset/split identities and hashes into the run
   contract before launch; never use an unnamed checkout, a cache path, or floating data directory as
-  scientific identity.
+  scientific identity. When several runs must share one source fingerprint, any source change restarts all of
+  them: batch changes before launch and price a mid-campaign restart before making it.
 - [ ] Build an idempotent `run_one` / `run_queue` from `scripts/` (`run_one.sh.template`,
   `run_queue.sh.template`), parameterized from the profile. Its mutable output must resolve inside
   `active/<run-id>`; cache resolves to the profile's `cache/`. A legacy `DURABLE_DIR/final_ckpts` copy is
@@ -59,9 +60,9 @@ sections, and skip any phase already done.
 - [ ] Wrappers are resumable: load-latest-on-startup unconditionally so the identical launch command resumes, not restarts (principle #8).
 - [ ] Bound checkpoint retention per `references/run-remote/artifact-layout.md` (`active/<run-id>`).
 - [ ] Build the per-cell queue/config files with one isolated write path per cell (no shared mutable output — parallel ablation needs this; `references/run-remote/parallel_ablation.md`).
-- [ ] **Run the cheap CPU smoke LOCALLY, BEFORE renting** — 1–2 batches, logger disabled, tiny shapes; it kills import/config/shape/scale bugs for ~free (principle #2). Smoke *content* → **references/verifying/methodology.md** (REQUIRED).
+- [ ] **Rehearse the exact launch command on CPU LOCALLY, BEFORE renting** — tiny data and shapes, but through every lifecycle point: stage switch, one candidate save through the real loading probe (no stubs), validation, final test, export. Assert, not eyeball: losses stay finite and ≥ their floor for a few hundred steps, and the parameter count equals the reference architecture. A rehearsal that ends inside warmup proves no learning: mark that check deferred and enforce it on the first real epoch (principle #2). Smoke *content* → **references/verifying/methodology.md** (REQUIRED).
 
-> **verify:** smoke exits 0 on 2 batches with the logger disabled, no Traceback.
+> **verify:** the rehearsal reaches export with rc 0, every lifecycle assertion passes, and each deferred check is written into the launch's monitor.
 
 ## Phase 3 — Detached launch
 
@@ -77,7 +78,8 @@ sections, and skip any phase already done.
 
 - [ ] For anything over ~1–2 h, deploy the **four-layer architecture** (`references/run-remote/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels + recovery handbook. A session-bound watcher alone dies with the session (principle #3).
 - [ ] Use a bounded background waiter that exits and notifies (Claude Code: `run_in_background`; other hosts map per `references/run-remote/monitoring_patterns.md` §7) for long waits; never foreground-poll. NEVER an unquoted `|` inside a poll-regex (see `references/run-remote/monitoring_patterns.md` §0, fact 4).
-- [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure).
+- [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure). Also alert on a negative or non-finite loss, a heartbeat older than 30 min, and a validation metric outside the reference run's same-epoch band: a crash-only watcher let a 6–10 dB regression run ~3 h (2026-10-11).
+- [ ] State and ledger entries take their timestamp from the writing command's own clock (`date -u`, or `time.gmtime()` in the same call), never typed: typed stamps ran ahead of the clock four times on 2026-10-11..13 with the rule already loaded.
 - [ ] Reconcile each watcher against the job's REAL process/artifact (`tmux ls`/`squeue`/`pgrep` + output `mtime`) — a watcher's own state is a claim, not ground truth (principle #3). Tear a watcher down when its job is superseded.
 - [ ] Classify each failure → its fixed remediation (see Failure handling below); **never blind-retry**.
 

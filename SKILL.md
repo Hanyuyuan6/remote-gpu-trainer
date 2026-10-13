@@ -74,12 +74,14 @@ Action economics, authority retirement, capacity semantics, and exact-chain regr
 
 ### Rented or shared machine
 
-0. Heavy work (training, `torchrun`, bulk downloads) runs on the node, never on the operator's machine; if a
-   local guard blocks it, go remote, and delete any download started locally by mistake before stopping.
+0. Heavy compute (training, `torchrun`, inference) runs on the node, never on the operator's machine; if a
+   local guard blocks it, go remote. Big files may transit this machine (step 9) but never stay on it.
 1. Read exactly one `profiles/<platform>.md`; it owns paths, proxy, billing, stop and destruction semantics,
    and the instance-naming rule (rename every box `<project>-<purpose>-<date>` on creation).
 2. Read `references/run-remote/principles.md`, then the current phase in `references/run-remote/lifecycle_checklist.md`.
-3. Bind source/config/data identities and run a cheap CPU or one-batch smoke before paid compute.
+3. Bind source/config/data identities and batch all source changes into one launch. Rehearse the exact command on
+   CPU through every lifecycle point (stage switch, a save via the real probe, validation, test, export); assert
+   finite non-negative losses and the reference parameter count.
 4. Execute producer → serializer → actual parser/runner → target shell/OS. Mocks may suppress external side
    effects, never real parsing, paths, quoting, ancestry, time, or exit propagation.
 5. Launch detached into a fresh `active/<run-id>` and checkpoint to durable storage with idempotent resume.
@@ -89,8 +91,8 @@ Action economics, authority retirement, capacity semantics, and exact-chain regr
    each on the mirror, locally, and on the node. A smoke test proves the box runs, not that the run has inputs.
 8. Independent runs get their own box, in parallel — a serial queue on one machine is a choice. One writer per
    GPU still holds: parallel means more machines, never two writers on one. Say which runs are independent first.
-9. The local machine's bandwidth is scarce and not on the critical path. Move artifacts remote↔remote
-   (mirror ↔ node); never route a transfer through the laptop because that is the shell you happen to be in.
+9. Route big transfers by measured speed (owner 2026-10-13): time a small probe on the node↔HF leg and on this
+   machine's leg, take the faster; a hop here is staging only — upload, read back, delete, note it in the receipt.
 
 Storage pressure is an active recovery problem, not a permanent blocker. Treat percentage as warning and
 `required bytes + margin` on the resolved device as the action threshold. Stop new writers, protect
@@ -108,10 +110,10 @@ background process is not restart-durable merely because the host still lists it
 - Prefer on-box self-completion and an OS- or product-owned durable watcher whose restart behavior is verified.
 - Wake the model only for a material delta, terminal state, blocker, new authority, or agreed sparse cadence.
 - After restart, compaction, or transport loss, re-probe process/session/artifact truth before trusting UI state.
-- Silence or a log string is historical evidence, not current liveness.
+- Silence or a log string is not current liveness, and liveness is not health: a status line names the metric,
+  the reference run's same-epoch value and the data's age; costs, durations and timestamps are computed, not recalled.
 
-Read `references/run-remote/monitoring_patterns.md` before creating a monitor: durability truth table,
-one-watcher lifecycle, bounded polling, recovery procedure, and the per-host primitive mapping.
+Read `references/run-remote/monitoring_patterns.md` (durability, one watcher, polling, recovery) before creating a monitor.
 
 ## Pull, shutdown, and release are different consequences
 
@@ -173,8 +175,6 @@ structure.
 - scientific result verification: `references/verifying/`
 - per-platform facts: `profiles/`
 - runnable templates and checkers (wrappers, monitors, transfer, acceptance, reconciliation): `scripts/`
-- one execution attempt: this skill; multi-run/multi-node closeout and project organization:
-  `research-artifact-hygiene`; durable mirroring/restoration: `mirror-research-artifacts`
 
 Load only the resource named by the current route. A generalizable, reproduced root cause may be proposed via
 `references/self-improvement.md`; project facts belong in project memory/SSoT, not this global entrypoint.

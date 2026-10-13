@@ -257,3 +257,7 @@ stop and retain the old key/receipt as evidence. Verify the recreation and new f
 the provider console or another authenticated channel, then replace only the scoped host+port entry.
 When no authenticated fingerprint exists, stop at the host-identity gate; the connection remains
 unverified. Never delete the old key and blindly re-accept an unreviewed replacement.
+
+**T7 — `Connection timed out during banner exchange` although TCP connects.** The operator's network filters the
+SSH exchange (the same box answers at once over a phone hotspot), so retrying changes nothing: switch networks
+for a deploy that needs SSH, and drive running nodes through the profile's non-SSH control channel.
