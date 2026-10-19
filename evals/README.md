@@ -14,12 +14,12 @@ For each scenario it asserts the answer is **present, at the documented location
 keywords intact**: every `expect_files` exists, every `expect_ids` is still a `### <ID>` header there, every
 `expect_grep` term is still in the text, and every `reject_each_grep` term is absent from its
 `reject_each_files`. It then runs [`test_instruction_surface.py`](test_instruction_surface.py), which caps
-`SKILL.md` at 16 KB / 180 lines and pins the load-bearing sentences of the entrypoint and the monitoring,
-custody, and control-economy references. This is a **drift guard**: it catches a renamed or removed entry, a
-moved section, a deleted file, or a fact rewritten away from its key term. It proves neither that an agent
-*navigates* there (Tier 2) nor that a platform fact is true on a live box (see the README's Verification
-status). The GitHub workflow runs it together with `scripts/test_reconcile.py` and the advisory
-`scripts/check_staleness.py`.
+`SKILL.md` at 16 KB / 180 lines, keeps retired local-custody and monitor-durability claims from returning, and
+checks that at least 16 cases route through the control-economy reference; it pins no live wording. This is a
+**drift guard**: it catches a renamed or removed entry, a moved section, a deleted file, or a fact rewritten
+away from its key term. It proves neither that an agent *navigates* there (Tier 2) nor that a platform fact is
+true on a live box (see the README's Verification status). The GitHub workflow runs it on every push and pull
+request to `main`, together with `scripts/test_reconcile.py` and the advisory `scripts/check_staleness.py`.
 
 ## Tier 2 — agentic navigation
 
