@@ -324,6 +324,20 @@ before launch; disclose the off-band torch version with results.
   `POST /api/v1/instance` (list: status, `ssh_port`) and `POST /api/v1/instance/power_on` /
   `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. Identify a box by its full `instance_uuid` and name tag, never by a uuid prefix or by whether SSH connects. A no-GPU
   boot did not start through the API in four request shapes; use the row's 「无卡模式开机」 instead.
+- **Locate an SSH handshake timeout by switching networks.** When the console shows the target instance as
+  「运行中」 (running) and the SSH address was read live from its row, but a direct connection stalls in the
+  `banner exchange`, ask the user to switch to a phone hotspot and make one time-bounded SSH retry to the same
+  address. A success over the hotspot supports only "the original network path is involved", not a specific
+  firewall or platform fault; still verify the remote instance's identity and real CUDA execution. Shut idle
+  instances down while the user switches, and state the hotspot's data use from what this run actually
+  transfers. If the first deployment completes over the hotspot, install and self-test the Bucket mailbox
+  below right away; once the self-test passes, tell the user the hotspot can go off, because control and data
+  then both go through Hugging Face. Without a passing mailbox, say unprompted that they can switch back to the
+  original Wi-Fi once results are pulled back and verified and the instance is shut down.
+- **The web copy succeeds but the browser tool's virtual clipboard is empty.** Paste the non-sensitive SSH
+  command into an input box you control in the same browser's native UI, read it there, then clear the box
+  (measured 2026-10: this recovered the address). Never paste a password into a visible box, and never use
+  this to get around a tool's safety refusal.
 - **Never click a menu item by remembered coordinates.** The last entry of 「更多」 is 「释放实例」, which
   destroys the instance and its data disk (a near miss on 2026-09-06: the red confirmation does not
   close on Escape). Find entries by their text on a fresh read of the page.
