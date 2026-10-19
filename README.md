@@ -83,7 +83,7 @@ The same discipline continues after the run. A green run is not a trustworthy re
 | vast.ai | `destroy`, which deletes everything | A stopped instance bills its disk indefinitely; bandwidth bills in every state |
 | Lambda | `terminate`, which wipes the local NVMe | No stop state; `sudo shutdown` keeps billing; NFS bills until deleted |
 | Paperspace | Shutting down stops compute only | Storage, public IPs and snapshots bill until destroyed |
-| Gpushare (恒源云), Matpool (矩池云), Featurize, LanRui (揽睿星舟) | Differs per platform | Gpushare releases a stopped instance after 10 days; LanRui bills the data disk while stopped |
+| Gpushare, Matpool, Featurize, LanRui | Differs per platform | Gpushare releases a stopped instance after 10 days; LanRui bills the data disk while stopped |
 | Any SSH machine | You, by hand | Nothing reclaims a forgotten machine; it bills around the clock |
 
 The SSH profile also covers Slurm, Kubernetes and Colab or Kaggle as short differences, and a machine you own gets its own profile: no meter, same discipline. Each fact carries the date it was verified, and the agent re-checks the provider's current docs before any irreversible step.
@@ -96,13 +96,13 @@ This section is for the coding agent doing the install. Work through the steps i
 
 You usually know which host you are. If not, check the environment: Claude Code sets `CLAUDECODE=1` and Gemini CLI sets `GEMINI_CLI=1` in the shells they start. Otherwise, ask the user.
 
-| Host | User skills directory | Source |
-|---|---|---|
-| Claude Code | `~/.claude/skills/` | [docs](https://code.claude.com/docs/en/skills) |
-| OpenAI Codex | `~/.agents/skills/` | [docs](https://learn.chatgpt.com/docs/build-skills) |
-| Cursor | `~/.agents/skills/` | [docs](https://cursor.com/docs/skills) |
-| Gemini CLI | `~/.agents/skills/` | [docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
-| GitHub Copilot | `~/.agents/skills/` | [docs](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
+| Host (linked to its docs) | User skills directory |
+|---|---|
+| [Claude Code](https://code.claude.com/docs/en/skills) | `~/.claude/skills/` |
+| [OpenAI Codex](https://learn.chatgpt.com/docs/build-skills) | `~/.agents/skills/` |
+| [Cursor](https://cursor.com/docs/skills) | `~/.agents/skills/` |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) | `~/.agents/skills/` |
+| [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `~/.agents/skills/` |
 
 Hosts that share a directory need only one copy. Cursor and VS Code also read `~/.claude/skills/`, so a Claude Code install covers them too. At user level, Claude Code reads only `~/.claude/skills/` and Codex only `~/.agents/skills/`, so if the user runs both, install into both. For any other host, use the user-level skills directory from its own docs. Cloud agents, such as Claude Code cloud sessions and Cursor Cloud Agents, do not read these local folders.
 
