@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -120,8 +121,11 @@ def write_verification(root: Path, manifest_path: Path, manifest: dict) -> Path:
         "files": len(manifest["files"]),
         "bytes": sum(item["bytes"] for item in manifest["files"]),
     }
-    temporary = marker.with_name(marker.name + ".tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # The remote node wrote this tree, so a fixed temporary name may already be a planted link;
+    # mkstemp creates a fresh, unpredictable file and never follows one.
+    descriptor, temporary = tempfile.mkstemp(dir=root, prefix=f".{VERIFICATION_NAME}.", suffix=".tmp")
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     os.replace(temporary, marker)
     return marker
 

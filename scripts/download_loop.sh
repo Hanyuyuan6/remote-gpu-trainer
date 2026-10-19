@@ -33,11 +33,19 @@ cd "$LOCAL_TARGET" || exit 1
 
 echo "Fetching immutable pull manifest from $REMOTE_ALIAS:$REMOTE_PATH ..."
 incoming="$LOCAL_TARGET/$MANIFEST_NAME.incoming"
+# rsync keeps a manifest the node serves as a link, so an earlier pull can leave either name as one.
+# Remove the entry rather than write through it (rsync) or move into the directory it names (mv).
+rm -f "$incoming"
 if ! rsync -az --partial -e 'ssh -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=120' \
     "$REMOTE_ALIAS:$REMOTE_PATH/$MANIFEST_NAME" "$incoming"; then
     echo "ERROR: remote manifest is missing or unreachable; run build_pull_manifest.py after final aggregation." >&2
     exit 1
 fi
+if [ -L "$incoming" ] || [ ! -f "$incoming" ]; then
+    echo "ERROR: the remote manifest arrived as a link or not as a regular file; refusing it." >&2
+    exit 1
+fi
+rm -f "$LOCAL_TARGET/$MANIFEST_NAME"
 mv -f "$incoming" "$LOCAL_TARGET/$MANIFEST_NAME"
 
 dirs_output=$("$PY" - "$LOCAL_TARGET/$MANIFEST_NAME" <<'PY'
@@ -47,7 +55,7 @@ dirs = manifest.get("top_level_dirs")
 if manifest.get("schema") != "remote-gpu-trainer/PULL/v1" or not isinstance(dirs, list):
     raise SystemExit("invalid pull manifest schema or top_level_dirs")
 for name in dirs:
-    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+    if not isinstance(name, str) or name in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
         raise SystemExit(f"unsafe result directory in manifest: {name!r}")
     print(name)
 PY
@@ -57,7 +65,8 @@ if [ "$parse_rc" -ne 0 ]; then
     echo "ERROR: local pull manifest failed validation." >&2
     exit 1
 fi
-if [ -z "$dirs_output" ]; then remote_dirs=(); else mapfile -t remote_dirs <<< "$dirs_output"; fi
+remote_dirs=()   # a read loop, not mapfile: macOS still ships Bash 3.2
+while IFS= read -r name; do [ -n "$name" ] && remote_dirs+=("$name"); done <<< "$dirs_output"
 n_total=${#remote_dirs[@]}
 echo "Manifest declares $n_total remote dirs"
 if [ "$n_total" -eq 0 ]; then
@@ -69,9 +78,12 @@ ok=0; fail=0
 for d in "${remote_dirs[@]}"; do
     [ -n "$d" ] || continue
     echo "SYNCING $d (rsync verifies size/mtime and resumes partial files) ..."
-    mkdir -p "$d"
+    if [ -L "./$d" ]; then   # rsync would write wherever the link points
+        echo "FAIL $d (a link inside the target; point LOCAL_TARGET at the disk you want instead)"; fail=$((fail+1)); continue
+    fi
+    mkdir -p "./$d"   # ./ keeps a name such as -n from reading as an option
     if rsync -az --partial -e 'ssh -o ConnectTimeout=15 -o ServerAliveInterval=60 -o ServerAliveCountMax=120' \
-        "$REMOTE_ALIAS:$REMOTE_PATH/$d/" "$d/" ; then
+        "$REMOTE_ALIAS:$REMOTE_PATH/$d/" "./$d/" ; then
         echo "OK $d"; ok=$((ok+1))
     else
         echo "FAIL $d"; fail=$((fail+1))
