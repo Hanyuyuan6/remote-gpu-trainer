@@ -43,8 +43,8 @@ if ! eval "${PROXY_HOOK}" 2>/dev/null; then
 fi
 
 # Dead-man timer: stop a forgotten node once the planned runtime has clearly passed (one is armed per
-# node; later jobs reuse it). Shadow mode until 2026-10-15: a missing duration only warns; after that
-# date the template refuses to start without DEADMAN_SECONDS or an explicit off:<reason>.
+# node; later jobs reuse it). Shadow mode: a missing duration only warns. Set DEADMAN_SECONDS, or
+# DEADMAN_SECONDS=off:<reason> to run without a timer on purpose.
 case "$DEADMAN_SECONDS" in
     off:?*) echo "dead-man timer disabled: ${DEADMAN_SECONDS#off:}" >&2 ;;
     ''|*[!0-9]*) echo "PREFLIGHT WARNING (shadow): set DEADMAN_SECONDS to planned runtime x 1.5 + pull window, or DEADMAN_SECONDS=off:<reason>" >&2 ;;

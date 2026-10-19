@@ -1,8 +1,8 @@
 name: evals
 
 # Structural reachability evals + reconcile unit tests + staleness advisory.
-# Everything here is pure Python 3 stdlib — no pip install, no secrets — matching
-# the skill's stdlib-only contract, so the guard runs on a clean runner in seconds.
+# Everything here is pure Python 3 stdlib — no pip install, no secrets — so the
+# guard runs on a clean runner in seconds.
 
 on:
   push:

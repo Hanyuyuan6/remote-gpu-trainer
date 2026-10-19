@@ -1,192 +1,237 @@
 # remote-gpu-trainer
 
-An [Agent Skill](https://agentskills.io) for the whole life of a deep-learning experiment: **RUN** a job on a
-GPU you own or rent, **VERIFY** that the number is real, and **DELIVER** it as single-source, reproducible
-figures and tables. Its deepest part is remote-GPU operations — AutoDL, RunPod, vast.ai, Lambda, Paperspace,
-the Chinese platforms (恒源云 / 矩池云 / Featurize / 揽睿星舟), bare SSH, Slurm, Kubernetes, one box or a
-fan-out of many — wrapped in the full run → verify → deliver arc.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-SKILL.md-blue)](https://agentskills.io)
 [![evals](https://github.com/Hanyuyuan6/remote-gpu-trainer/actions/workflows/evals.yml/badge.svg)](https://github.com/Hanyuyuan6/remote-gpu-trainer/actions/workflows/evals.yml)
-[![Release](https://img.shields.io/github/v/release/Hanyuyuan6/remote-gpu-trainer)](https://github.com/Hanyuyuan6/remote-gpu-trainer/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> "AutoDL" here is the [autodl.com](https://www.autodl.com) GPU-rental platform, not AutoML. And this is a
-> skill — a `SKILL.md` with reference docs and script templates — not a CLI or an SDK. It sits on top of
-> each platform's API and captures the operational and judgment knowledge the docs leave out.
+**Train on rented GPUs with your coding agent, without losing checkpoints or paying for idle machines.**
 
-## The three phases
+English · [中文简介](#中文简介)
 
-- **RUN** — get a long GPU job to start, survive, and finish, then get the result off the box. On a rented
-  machine you are a short-term tenant on someone else's hardware: detach the work, make the result outlive
-  the instance, and stop the meter safely. Everything that genuinely varies between platforms
-  (stop-vs-destroy billing, machine-locked volumes, whether `/root` survives a power-off, acceleration proxy
-  vs HF mirror, spot grace windows) lives in one profile per platform.
-- **VERIFY** — is this number a bug, a real effect, or noise? A surprising result is a hypothesis, not a
-  fact to report. Platform-agnostic.
-- **DELIVER** — close the run into an immutable export capsule and make every shipped number a
-  deterministic function of it, so a stale or hand-typed number cannot ship. Platform-agnostic.
+Renting a GPU is the easy part. The costly surprises come later: a teardown that deletes the only copy of your checkpoints, a "stopped" machine that keeps billing, a job that looks busy but went wrong hours ago.
 
-Two stances run through VERIFY and DELIVER: **user sovereignty** (seed count, which samples, whether an
-auxiliary channel exists are the user's calls; the skill discloses a tradeoff once and stops nagging) and
-**audit → disclose, not enforce** (an integrity issue surfaces with the conclusion it affects; a gate may
-only fail closed when passing it would make a reported number wrong).
+remote-gpu-trainer is an [Agent Skill](https://agentskills.io) for Claude Code, Codex and other coding agents. It lets your agent launch, monitor, resume and stop training on AutoDL, RunPod, vast.ai, Lambda, Paperspace, four other Chinese GPU clouds or any machine you can SSH into, and bring back checkpoints that are verified, not just copied.
 
-```mermaid
-flowchart TD
-    TASK(["A DL experiment on a GPU you own or rent"]) --> HUB
-    HUB["<b>SKILL.md</b> — always loaded<br/>outcome first · consequence levels · RUN / VERIFY / DELIVER router"]
-    HUB --> RUN["<b>RUN</b>"]
-    HUB --> VER["<b>VERIFY</b><br/>is the number real?"]
-    HUB --> DEL["<b>DELIVER</b><br/>single-source, reproducible"]
-    RUN --> RL["references/run-local/ + profiles/local.md<br/>a box you own"]
-    RUN --> RR["references/run-remote/ + profiles/ ×7<br/>a box you rent: lifecycle · monitoring · custody · teardown"]
-    RUN --> TR["references/training/ ×8<br/>when the run breaks: OOM · hang · NaN · throughput · convergence"]
-    VER --> VM["references/verifying/<br/>14-section methodology · collapse · smoke"]
-    DEL --> DM["references/run-remote/artifact-layout.md<br/>+ delivering/ synthesis rules + scripts/reconcile.py"]
-```
+## What it prevents
 
-## Why this exists
-
-Renting the GPU is the easy part; so is starting a run. The costly surprises are everything around it: a box
-you "stopped" that keeps billing, a checkpoint that printed `synced` but never wrote because the disk ran out
-of inodes rather than bytes, a download hanging behind the wrong mirror, a `terminate` that takes the only
-copy of a week's training. Then, after the run: a 1.2 % "win" that is a misconfigured baseline, a leaked test
-split that survives every shallow check, a headline number left stale in the slides. None of this is in any
-platform's API docs, and you usually learn it after you have paid — in money, or in a retraction.
-
-Infrastructure orchestrators (SkyPilot, dstack, Modal) own or abstract the box and price-shop across Western
-clouds; use them for that. This skill works on the raw rented instance you already have, including the
-platforms they skip (AutoDL, the Chinese platforms, cheap bare-SSH rentals, where the daily work is disk and
-inode budgeting, mirror stalls, cgroup OOM, spot grace windows, and teardown you cannot take back), and it
-does not stop at "the job ran" — it continues into whether the number is real and whether the deliverable is
-reproducible from one evidence layer.
-
-## Layout
-
-Progressive disclosure: a small hub is always loaded; everything else is read in only when a phase needs it.
-RUN is platform-specific at the edges (one profile owns every concrete path, verb, and rule) and invariant at
-the core; VERIFY and DELIVER run the same whether the job trained locally or on a rental.
-
-```text
-remote-gpu-trainer/
-├── SKILL.md                 # the hub: outcome-first decision, consequence levels, RUN/VERIFY/DELIVER router
-├── profiles/                # one file per platform — the only place concrete specifics live
-│   ├── _schema.md           #   the shared frontmatter + 8-section contract
-│   ├── local.md             #   a box you own (no meter, no teardown clock)
-│   ├── autodl.md            #   deepest, hands-on
-│   ├── runpod.md · vastai.md · lambda.md · paperspace.md
-│   ├── china.md             #   恒源云 / 矩池云 / Featurize / 揽睿星舟
-│   └── generic-ssh.md       #   bare SSH, with Slurm / Kubernetes / Colab-Kaggle diffs
-├── references/
-│   ├── run-local/           #   env hygiene · launch · single-node multi-GPU · local OOM
-│   ├── run-remote/          #   principles (10) · lifecycle checklist (phases 0–5) · monitoring · ssh transport ·
-│   │                        #     spot resilience · China network · parallel ablation · multinode ·
-│   │                        #     artifact layout · acceptance · control economy · gotchas U1–U44
-│   ├── training/            #   when the RUN breaks: OOM · distributed launch · precision · throughput ·
-│   │                        #     checkpoint/resume · per-domain · convergence · data pipeline
-│   ├── verifying/           #   methodology (6 invariants, 14 sections) · representation collapse · smoke failures
-│   ├── delivering/          #   publication-synthesis rules and the delivery gate
-│   └── self-improvement.md  #   how new gotchas earn a place without corrupting the skill
-├── scripts/                 # stdlib-only, parameterized from a profile's §8 SCRIPT OVERRIDES
-│   ├── run_one.sh.template · run_queue.sh.template · health_patrol.sh.template
-│   ├── mem_monitor.sh · gpu_health.sh · reap_vram_zombies.sh
-│   ├── aggregate_to_fs.sh · download_loop.sh · setup-china-mirrors.sh
-│   ├── build_pull_manifest.py · verify_local.py · verify_artifact_bundle.py · compare_acceptance.py
-│   ├── manifest_scaffold.py · repro.sh.template · reconcile.py (+ test_reconcile.py)
-│   └── wandb_forensics.py · check_staleness.py
-└── evals/                   # 49 scenarios · run_evals.py (drift guard, no API key) · RESULTS.md
-```
-
-Every profile fills the same frontmatter and eight sections (launch, storage survival matrix, network,
-spot/resume, teardown/billing, daemon, gotchas, script overrides), so a platform you have never used reads
-like one you have. Every money-affecting fact carries a `verified <YYYY-MM>` stamp;
-`scripts/check_staleness.py` lists the ones older than six months.
+- **Losing checkpoints at teardown.** Releasing an AutoDL instance or terminating a RunPod Pod deletes its disk. The agent releases nothing until every file has been read back somewhere independent, hashed, loaded and re-scored, and you have said yes.
+- **Paying for idle machines.** A stopped RunPod Pod bills its volume at twice the running rate, a stopped vast.ai instance bills its disk indefinitely, and `sudo shutdown` on Lambda leaves the meter running. The skill knows which action actually stops each meter.
+- **Silent timers.** AutoDL releases a stopped instance after 15 days, data disk included, and RunPod and vast.ai can delete instances and storage when your balance runs out. The agent tells you about these the first time you use a platform.
+- **Runs that look alive but are not learning.** A live process and a scrolling log are not health. Status reports compare the metric with a reference run at the same epoch and say how old the data is.
+- **OOM, NaN, hangs and all-zero metrics.** OOM on step 2, NaN after a precision change, one crashed rank hanging the rest, a resume that restarts at epoch 0, a starved GPU, mAP stuck at zero while the loss falls: each is looked up by symptom, with its root cause and fix.
+- **Numbers that are not real.** Before a result is reported, the agent states the seed, changes one variable at a time, checks for leakage and decides whether a gap is a bug, a real effect or noise.
 
 ## Install
 
-One folder with `SKILL.md` at its root. Clone it into the directory your agent reads skills from, restart the
-agent, and it triggers on its own for the tasks above. Keep the folder named `remote-gpu-trainer`; the
-standard requires the directory name to match the skill's `name`.
+**Let your agent do it.** Paste this into Claude Code, Codex, Cursor, Gemini CLI or GitHub Copilot:
 
-```bash
-# Claude Code
-git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.claude/skills/remote-gpu-trainer
-# OpenAI Codex
-git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git ~/.agents/skills/remote-gpu-trainer
+```text
+Install the remote-gpu-trainer agent skill. Read
+https://raw.githubusercontent.com/Hanyuyuan6/remote-gpu-trainer/main/README.md
+and follow its "For AI agents" section for this host. Then tell me
+where you installed it and how you confirmed it loaded.
 ```
 
-Cursor, Trae, Gemini CLI, VS Code / Copilot, Goose, Kiro, and other compatible agents read the same open
-`SKILL.md` standard; their docs or [agentskills.io](https://agentskills.io) give the directory. Provider-bound
-monitoring, scheduling, and tool names differ per host: the mapping is `references/run-remote/monitoring_patterns.md` §7.
+**Or clone it yourself.** For Claude Code:
 
-Optional check with [uv](https://github.com/astral-sh/uv):
-
-```bash
-uvx --from skills-ref agentskills validate ~/.claude/skills/remote-gpu-trainer   # → "Valid skill"
+```sh
+git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git \
+  ~/.claude/skills/remote-gpu-trainer
 ```
 
-## Companion skills (all optional)
+For Codex, Cursor, Gemini CLI or GitHub Copilot:
 
-The skill is self-contained: every step of RUN → VERIFY → DELIVER works with a shell and the bundled
-`references/` and `scripts/`. It names a few separate skills where one deepens a step — `research-artifact-hygiene`
-(multi-run closeout and long-term project layout), `mirror-research-artifacts` (durable mirrors and restores),
-`superpowers:*` (verification-before-completion, parallel dispatch) and `huggingface-skills:*` (hf CLI,
-Trackio). Where one is not installed, do the equivalent step with your own tools; the step matters, not the
-skill.
+```sh
+git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git \
+  ~/.agents/skills/remote-gpu-trainer
+```
 
-## Scope
+To update, run `git -C ~/.claude/skills/remote-gpu-trainer pull --ff-only`, or the same with the `~/.agents/skills` path.
 
-- **For:** the full lifecycle of a DL experiment — RUN on a GPU you own or rent (Chinese and Western clouds,
-  bare SSH, Slurm, K8s; one or many instances; training, eval, ablation sweeps, batch inference, large data
-  processing), VERIFY (bug vs effect vs noise: leakage, fair comparison, collapse, variance, cross-document
-  drift), DELIVER (a single-source, reproducible set of figures and tables).
-- **Not for:** managed multi-cloud price-shopping with auto spot-recovery (SkyPilot), open BYOC dev
-  environments (dstack), zero-ops serverless inference (Modal). For in-instance multi-GPU launching it tells
-  you how to drive `torchrun` / `accelerate` / `deepspeed`; it does not replace them.
+To check that it works, ask your agent: *"On AutoDL, what happens to my data disk if I shut the instance down, and what if I release it?"* The right answer: shutting down (关机) keeps the disk, but a stopped instance is released automatically after 15 days; releasing (释放) deletes the disk, and only `/root/autodl-fs` survives.
+
+## Use it
+
+Ask in plain language; the skill loads when the task matches. For example:
+
+- "Train `configs/base.yaml` on my AutoDL instance, watch it, and pull the best checkpoint back when it finishes."
+- "My RunPod spot Pod was interrupted at epoch 12. Resume it without losing progress."
+- "Run these four ablations in parallel on four vast.ai instances."
+- "The loss went NaN after I switched to bf16. Find out why."
+- "I'm done on Lambda. Pull everything back, verify it, and tell me what `terminate` will delete."
+
+To call it by name, type `/remote-gpu-trainer` in Claude Code or `$remote-gpu-trainer` in Codex.
+
+## How it works
+
+remote-gpu-trainer is a skill, not a CLI or an SDK: a `SKILL.md` your agent loads, plus reference docs and script templates it opens only when a step needs them. It works over SSH and, where a platform has one, its CLI or API; there is no service to host.
+
+1. **Learn the platform first.** The agent reads one platform profile and tells you its conveniences and danger clocks, such as AutoDL's one-click SSH key setup and its 15-day release timer.
+2. **Rehearse before renting.** The exact launch command runs locally on CPU with tiny data, through every stage switch, save, validation, test and export, so a broken script fails before the meter starts.
+3. **Launch so it survives.** The job runs detached in a fresh run directory and checkpoints atomically to storage that outlives the instance. The same command resumes from the latest checkpoint.
+4. **Monitor without a chat open.** The job completes on the box by itself. One bounded watcher per run wakes the agent only when something material changes.
+5. **Verify before anything is destroyed.** Checkpoints are read back somewhere independent and checked by file list, size, SHA-256, safe load and recomputed metrics.
+6. **Stop the meter, with your approval.** Shutdown and release are separate decisions, and the agent uses the action that actually stops billing on that platform.
+
+The same discipline continues after the run. A green run is not a trustworthy result: the agent states seeds and determinism settings, changes one variable per comparison, probes leakage, fairness and variance, and treats a matching hash, a safe load and a fresh evaluation as three separate proofs. Each finished run closes into an immutable `export/<run-id>`, and `scripts/reconcile.py` flags any number in your paper, slides or README that has drifted from the evidence file.
+
+## Platforms
+
+| Platform | What stops the meter | Watch out for |
+|---|---|---|
+| AutoDL | Shut down (关机) stops GPU billing and keeps the disks | A stopped instance is released after 15 days; release (释放) deletes the data disk |
+| RunPod | `terminate`; only a Network Volume survives | A stopped Pod bills its volume at 2× and may restart with zero GPUs |
+| vast.ai | `destroy`, which deletes everything | A stopped instance bills its disk indefinitely; bandwidth bills in every state |
+| Lambda | `terminate`, which wipes the local NVMe | No stop state; `sudo shutdown` keeps billing; NFS bills until deleted |
+| Paperspace | Shutting down stops compute only | Storage, public IPs and snapshots bill until destroyed |
+| Gpushare (恒源云), Matpool (矩池云), Featurize, LanRui (揽睿星舟) | Differs per platform | Gpushare releases a stopped instance after 10 days; LanRui bills the data disk while stopped |
+| Any SSH machine | You, by hand | Nothing reclaims a forgotten machine; it bills around the clock |
+
+The SSH profile also covers Slurm, Kubernetes and Colab or Kaggle as short differences, and a machine you own gets its own profile: no meter, same discipline. Each fact carries the date it was verified, and the agent re-checks the provider's current docs before any irreversible step.
+
+## For AI agents
+
+This section is for the coding agent doing the install. Work through the steps in order, then report back to the user. If you are a person, the prompt under [Install](#install) is all you need.
+
+### 1. Find your skills directory
+
+You usually know which host you are. If not, check the environment: Claude Code sets `CLAUDECODE=1` and Gemini CLI sets `GEMINI_CLI=1` in the shells they start. Otherwise, ask the user.
+
+| Host | User skills directory | Source |
+|---|---|---|
+| Claude Code | `~/.claude/skills/` | [docs](https://code.claude.com/docs/en/skills) |
+| OpenAI Codex | `~/.agents/skills/` | [docs](https://learn.chatgpt.com/docs/build-skills) |
+| Cursor | `~/.agents/skills/` | [docs](https://cursor.com/docs/skills) |
+| Gemini CLI | `~/.agents/skills/` | [docs](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/skills.md) |
+| GitHub Copilot | `~/.agents/skills/` | [docs](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) |
+
+Hosts that share a directory need only one copy. Cursor and VS Code also read `~/.claude/skills/`, so a Claude Code install covers them too. At user level, Claude Code reads only `~/.claude/skills/` and Codex only `~/.agents/skills/`, so if the user runs both, install into both. For any other host, use the user-level skills directory from its own docs. Cloud agents, such as Claude Code cloud sessions and Cursor Cloud Agents, do not read these local folders.
+
+### 2. Install or update
+
+Set `SKILLS_DIR` from the table, then run this block. It clones on the first run and fast-forwards on later runs, so it is safe to repeat.
+
+```sh
+SKILLS_DIR="$HOME/.agents/skills"
+if [ -d "$SKILLS_DIR/remote-gpu-trainer/.git" ]; then
+  git -C "$SKILLS_DIR/remote-gpu-trainer" pull --ff-only
+else
+  git clone https://github.com/Hanyuyuan6/remote-gpu-trainer.git \
+    "$SKILLS_DIR/remote-gpu-trainer"
+fi
+```
+
+- For Claude Code, set `SKILLS_DIR="$HOME/.claude/skills"`.
+- Keep the folder name exactly `remote-gpu-trainer`. The Agent Skills spec requires it to match the skill's `name`.
+- If a non-empty folder of that name exists but is not a git clone, `git clone` stops with an error. Ask the user before replacing that folder.
+- Without git, download `https://github.com/Hanyuyuan6/remote-gpu-trainer/archive/refs/heads/main.tar.gz`, extract it into the skills directory, and rename `remote-gpu-trainer-main` to `remote-gpu-trainer`.
+- Do not edit the installed copy. Project facts belong in the project's own instructions or memory, and a proposed fix goes to the user first, then upstream as a pull request.
+
+### 3. Confirm it loaded
+
+Run the bundled check. It needs only Python 3 and reads files without changing anything:
+
+```sh
+python3 "$HOME/.agents/skills/remote-gpu-trainer/evals/run_evals.py"
+```
+
+For Claude Code, use the `~/.claude/skills` path. The check should exit with status 0 and print `N/N cases reachable` with both numbers equal. Then confirm that the host itself sees the skill:
+
+- **Claude Code**: run `/skills` and look for `remote-gpu-trainer`. If `~/.claude/skills/` did not exist when the session started, run `/reload-skills` first.
+- **Codex**: type `$` or `/skills` and look for `remote-gpu-trainer`. If it is missing, restart Codex.
+- **Gemini CLI**: run `/skills list`, and `/skills reload` if the skill is missing.
+- **VS Code**: type `/skills` in chat to open the skills menu.
+- **Cursor and other hosts**: look in the host's skill list, and restart the host if the skill is missing.
+
+Tell the user the install path and the commit, from `git -C <install path> rev-parse --short HEAD`.
+
+### 4. Read in this order
+
+1. `SKILL.md`: the mission, the consequence levels and the resource router.
+2. Exactly one `profiles/<platform>.md`, for the machine the user trains on. On first contact with that platform, tell the user what its "Surface to the user" block lists.
+3. On a rented machine, `references/run-remote/principles.md`, then only the current phase of `references/run-remote/lifecycle_checklist.md`. On a machine the user owns, the matching file under `references/run-local/`.
+
+Load nothing else up front. When a problem appears, follow the router in `SKILL.md` to one reference. When a node is rented, heavy compute, such as training, inference or `torchrun`, runs on that node; on the user's machine, run only the CPU rehearsal and static checks.
+
+### 5. Hard rules
+
+1. **Never destroy data before the checkpoints are safe.** Release, terminate, destroy, delete, overwrite, and any stop that wipes a disk (a RunPod container disk, for one) all wait until you have read the checkpoints back into an independent location (the user's machine or another node) and checked the exact file list, sizes and SHA-256, a safe load, and every reported metric recomputed. Then ask the user and wait for an explicit yes.
+2. **Ask before spending money or doing anything irreversible.** That covers renting or resizing, any new paid scope and deleting data. Shutdown and release are separate decisions. Re-check the provider's current docs before a billing or teardown action.
+3. **Keep secrets out of sight.** Never put a key or token in a command, a log, a shared disk, a cloud sandbox or this repository. Refer to it by its environment-variable name or file path, and move it to the box through stdin.
+4. **Trust artifacts, not log lines.** A "done" line, a green spinner or a running process is not evidence. Check the files, hashes and metrics.
+
+## What's inside
+
+```text
+remote-gpu-trainer/
+├── SKILL.md          entry point and router
+├── profiles/         one file per platform
+├── references/
+│   ├── run-remote/   lifecycle, monitoring, transfer, 44 gotchas
+│   ├── run-local/    a machine you own
+│   ├── training/     184 entries: OOM, NaN, hangs, resume, speed
+│   ├── verifying/    is the number real?
+│   └── delivering/   figures and tables from one evidence layer
+├── scripts/          launch, health, transfer and verify tools
+└── evals/            49 scenarios checked in CI
+```
+
+Every profile has the same eight sections, from launch and storage survival to teardown and billing, so a platform you have never used reads like one you know. Every money-affecting fact carries a `verified YYYY-MM` stamp.
+
+A few of the scripts:
+
+- `gpu_health.sh` catches a dead or throttling GPU (Xid 48 or 79, crushed clocks) before you pay for hours on it.
+- `download_loop.sh` pulls directory by directory with `rsync --partial`, so a dropped connection resumes instead of starting over.
+- `build_pull_manifest.py` and `verify_local.py` bind a pull to an exact file list with SHA-256, then load each checkpoint safely, with `weights_only=True` by default. `verify_local.py` needs PyTorch.
+- `reconcile.py` reports numbers that have drifted from the evidence file, and `check_staleness.py` lists platform facts whose `verified` stamp is more than six months old.
+- `run_one.sh.template` wraps a launch, with an optional dead-man timer that powers off a forgotten AutoDL instance.
+
+### Companion skills
+
+The skill is self-contained. Where a separate skill deepens a step, it names one: [superpowers](https://github.com/obra/superpowers) for verification before completion and parallel dispatch, and [Hugging Face skills](https://github.com/huggingface/skills) for the `hf` CLI and Trackio. It also mentions two of the author's skills that are not published here, `research-artifact-hygiene` and `mirror-research-artifacts`. All of them are optional: without one, the agent does the equivalent step with its own tools.
 
 ## Verification status
 
-The AutoDL profile reflects the author's hands-on use. The other six rental profiles (RunPod, vast.ai,
-Lambda, Paperspace, the Chinese platforms, generic SSH / Slurm / K8s) are researched from official
-documentation and community reports, with every money-affecting fact cited inline and stamped, but not yet
-live-tested by the author — a well-sourced map, not a guarantee. The VERIFY and DELIVER layers are
-platform-agnostic methodology from the author's own research practice. The skill re-verifies before any
-costly or irreversible action (the Phase-0 live measurement and the teardown gate), so a stale fact shows up
-as "re-check the docs" rather than a silent loss. `evals/` holds 49 scenarios: a stdlib-only structural guard
-that runs in CI, and recorded fresh-agent navigation runs in `evals/RESULTS.md`.
+Only the AutoDL profile comes from the author's hands-on use. The other rental profiles are built from official documentation and community reports, plus gotchas that contributors hit on live runs. The skill re-checks the provider's current docs before any irreversible step, and `scripts/check_staleness.py` lists every `verified` stamp older than six months.
+
+CI runs 49 structural scenarios on every push and pull request to `main`; each checks that the answer to a realistic problem is still where the skill says it is. On 2026-09-15 the maintainer also gave 15 of them to fresh Claude Opus 5 subagents, starting from `SKILL.md`: all 15 reached a correct, specific answer within two hops. These are author-run smoke tests, not a benchmark; the runs are in [`evals/RESULTS.md`](evals/RESULTS.md).
+
+## When not to use it
+
+- **Multi-cloud price-shopping and automatic spot failover.** Use SkyPilot or dstack for that, then this skill to make your code resume correctly, so their recovery lands on real progress.
+- **Replacing your launcher.** It drives `torchrun`, `accelerate` and DeepSpeed; it does not replace them.
+- **Long-term archives.** It closes each run into a validated export. Durable mirrors and restores belong to a separate tool.
 
 ## Contributing
 
-Issues and PRs are welcome, especially new platform profiles and gotchas with a concrete
-`symptom → root cause → fix`; the issue templates cover both, plus platform-fact corrections. Keep every
-example generic — no real project names, hostnames, IPs, ports, or keys. The bar a gotcha must clear
-(root-caused, reproduced, generalizable) is `references/self-improvement.md`; new content should come with an
-eval case in `evals/cases.jsonl`.
+Issues and pull requests are welcome, and outside contributions have been merged: [PR #6](https://github.com/Hanyuyuan6/remote-gpu-trainer/pull/6) by [@hector25](https://github.com/hector25) added teardown and billing gotchas for RunPod, vast.ai and Lambda. The issue templates cover bugs, new gotchas, new platform profiles and platform-fact corrections.
+
+A new gotcha needs a known root cause, a reproduction or a clearly mechanistic explanation, and a reason other users would hit it too. Write it as symptom → root cause → fix, with a source; the full bar is in [`references/self-improvement.md`](references/self-improvement.md). Add a scenario to [`evals/cases.jsonl`](evals/cases.jsonl) and run `python3 evals/run_evals.py` before you open the pull request. Keep every example generic: no real project names, hostnames, IPs, ports or keys.
+
+## Security
+
+Report vulnerabilities privately through **Security → Advisories → Report a vulnerability** on this repository, not in a public issue, and never include a live secret. Details are in [SECURITY.md](https://github.com/Hanyuyuan6/remote-gpu-trainer/blob/main/SECURITY.md).
 
 ## Disclaimer
 
-An independent community resource, not affiliated with, endorsed by, or sponsored by AutoDL, RunPod, vast.ai,
-Lambda, Paperspace, DigitalOcean, or any platform named here; product names are used nominatively. Platform
-facts were accurate at their `verified` date; platforms change pricing, billing verbs, and limits, so confirm
-against current official docs before relying on a teardown or billing fact. Provided "as is" under the MIT
-License, without warranty.
+remote-gpu-trainer is an independent community project. It is not affiliated with, endorsed by or sponsored by AutoDL, RunPod, vast.ai, Lambda, Paperspace, DigitalOcean or any other platform named here; product names are used only to identify them. Platform facts were correct on their `verified` date, and platforms change prices, billing actions and limits, so check the current official docs before you rely on a billing or teardown fact. The software is provided as is, under the MIT License, without warranty.
 
 ## 中文简介
 
-一个覆盖深度学习实验全生命周期的 Agent Skill：**RUN**（在自己的或租来的 GPU 上把作业跑起来、跑完、把结果取回）→
-**VERIFY**（这个数到底是 bug、真效应还是噪声）→ **DELIVER**（整理成单一真源、可复现的图表）。最深的部分是远程
-GPU 运维：AutoDL、RunPod、vast.ai、Lambda、Paperspace、国内平台（恒源云 / 矩池云 / Featurize / 揽睿星舟）、裸
-SSH、Slurm、Kubernetes，单机或多机并行。核心想法：在租来的机器上你只是短期租客，所以要让作业 detach 扛住断连、在实例
-消失前把结果取下来、再安全地停掉计费；真正因平台而异的部分（停止与销毁的计费差别、锁定到机器的网盘、`/root` 是否在
-关机后保留、加速代理与 HF 镜像、spot 宽限）都下沉到各自的 `profiles/<平台>.md`。VERIFY 与 DELIVER 与平台无关：前者
-判断一个数能不能信（泄漏、公平对比、表征崩塌、方差、跨文档对账），后者用机制把「每个数都是不可变证据层的确定性函数」
-锁死。两条贯穿原则：用户主权（科研判断归你，skill 只组织并一次性披露 tradeoff）与审查→披露而非拦截。安装：把整个
-文件夹克隆进对应 agent 的 skills 目录，重启后自动触发（见 [Install](#install)）。
+remote-gpu-trainer 是一个 Agent Skill：让 Claude Code、Codex 等编程 agent 在租用的 GPU 上启动、监控、续训和停止训练，并把校验过的 checkpoint 取回本地或另一台节点。支持 AutoDL、恒源云、矩池云、Featurize、揽睿星舟、RunPod、vast.ai、Lambda、Paperspace，以及任何能 SSH 登录的机器。
+
+它主要解决这些问题：
+
+- **释放 = 删数据**：释放实例会连数据盘一起删除，没拉回的 checkpoint 就没了。释放前，agent 会把 checkpoint 读回到独立位置，核对文件清单、大小和 SHA-256，加载并重算指标，再等你确认。
+- **关机 ≠ 安全停放**：AutoDL 关机 15 天后自动释放，只有 `/root/autodl-fs` 能保留；RunPod、vast.ai 停机后磁盘照样计费。
+- **看着在跑，其实没在学**：进程还在、日志在刷，不等于训练正常；状态汇报会对照参考 run 在同一 epoch 的指标。
+- **OOM、NaN、卡死、指标全零**：按症状查原因和修法，训练排障条目共 184 条。
+- **国内网络**：AutoDL 的 `network_turbo` 学术加速、HF 镜像、Xet 大文件下载不走镜像等问题，都有现成的处理步骤。
+
+安装：Claude Code 克隆到 `~/.claude/skills/remote-gpu-trainer`；Codex、Cursor、Gemini CLI、GitHub Copilot 克隆到 `~/.agents/skills/remote-gpu-trainer`。命令见 [Install](#install)；也可以把那段提示词贴给你的 agent，让它按 [For AI agents](#for-ai-agents) 一节自己装好。
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Yuyuan Han.
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Yuyuan Han.
 
 ## Citing
 
