@@ -47,13 +47,13 @@ packages or make a reviewer re-approve read-only diagnosis. Execution permission
 already authorized bounded outcome carries through non-overwriting diagnosis, tests, parsing, hashes, and
 same-scope repair. Re-ask only when cost, irreversibility, protocol, publication, or target scope actually changes.
 
-**A gate may only fail closed when passing it would make a reported number wrong.** Before writing or
+**A research-protocol gate may only fail closed when passing it would make a reported number wrong.** Before writing or
 honouring one, name the claim it protects. Split leakage, checkpoint/config mismatch, metric-definition drift,
 selection-on-test: fail closed. Missing paperwork, an absent manifest, an unavailable validator, a receipt that
 cannot be regenerated on this machine: warn, record the gap in the artifact, and PROCEED. A red gate that
 cannot make any number wrong is costing GPU hours and calendar days to protect a filing cabinet. When a gate
 blocks and the substantive evidence is already in hand by another route, say so in one line and continue on
-that route — do not idle a paid node waiting for a human to adjudicate paperwork.
+that route — do not idle a paid node waiting for a human to adjudicate paperwork. Data, secret and spend guards stay closed.
 
 For a routine probe, launch, pull, or shutdown, use the maintained primitive. After one failed package and one
 successor, stop version churn: repair the primitive, use a minimal operator-visible command, or report one
@@ -81,7 +81,7 @@ Action economics, authority retirement, capacity semantics, and exact-chain regr
 2. Read `references/run-remote/principles.md`, then the current phase in `references/run-remote/lifecycle_checklist.md`.
 3. Bind source/config/data identities and batch all source changes into one launch. Rehearse the exact command on
    CPU through every lifecycle point (stage switch, a save via the real probe, validation, test, export); assert
-   finite non-negative losses and the reference parameter count.
+   finite losses (non-negative only where the objective is) and the reference parameter count.
 4. Execute producer → serializer → actual parser/runner → target shell/OS. Mocks may suppress external side
    effects, never real parsing, paths, quoting, ancestry, time, or exit propagation.
 5. Launch detached into a fresh `active/<run-id>` and checkpoint to durable storage with idempotent resume.

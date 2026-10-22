@@ -62,7 +62,8 @@ host can simply vanish (`Offline`) mid-run (VAST7). Boot is not instant: the hos
 image and boot — typically 1–5 min depending on image size** (verified docs.vast.ai CLI Hello World 2026-06);
 a fat image stuck in `Loading` is the slow-download symptom (VAST13).
 
-→ **verify:** `vastai show instance OFFER_ID` lists the new instance `running`, and an in-container
+→ **verify:** `vastai show instance INSTANCE_ID` (the `new_contract` value `create instance` printed; the offer ID
+is a different number) lists the new instance `running`, and an in-container
 `nvidia-smi` (via `--onstart-cmd` or first SSH) shows the expected GPU with a CUDA that matches the image.
 
 ## 2. STORAGE MODEL  *(survival matrix — principle #4)*

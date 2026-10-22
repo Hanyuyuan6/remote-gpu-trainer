@@ -171,7 +171,8 @@ re-compute lost to a reboot).
 **关机 (shutdown / power-off) STOPS the meter AND keeps `/root` + both disks — this is the AutoDL
 EXCEPTION among rentals.** Everywhere else (RunPod wipes the container disk on stop, vast bills the disk
 forever, K8s wipes the pod FS, Colab loses `/content`) a "stop" is lossy or still-billing. On AutoDL,
-关机 is the **safe park**: meter off, all three tiers intact, restart later. There is also a **no-GPU /
+关机 is the **safe park** for up to 15 days: GPU meter off (the data disk still bills a little, see Cost trap),
+all three tiers intact, restart later; a box left off longer is auto-released and its data disk deleted (AD-DANGER). There is also a **no-GPU /
 无卡模式 mode** for cheap restart to copy files or fix the env without paying for the GPU.
 
 | Action | Stops meter? | Keeps `/` + data disk? | Keeps FS? | Reversible? |
