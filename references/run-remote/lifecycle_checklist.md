@@ -53,6 +53,7 @@ sections, and skip any phase already done.
   contract before launch; never use an unnamed checkout, a cache path, or floating data directory as
   scientific identity. When several runs must share one source fingerprint, any source change restarts all of
   them: batch changes before launch and price a mid-campaign restart before making it.
+- [ ] **Retrain only for errors baked into the weights.** Before relaunching for a fix, classify it: an error in the method itself (architecture, loss, output semantics, a training-loop bug) needs retraining; an evaluation-side fix (noise-injection boundary, decoding, box clipping, post-hoc calibration) re-evaluates the existing weights; a deliberate protocol unification (shared data, epochs, batch) is a disclosed difference, not an error.
 - [ ] Build an idempotent `run_one` / `run_queue` from `scripts/` (`run_one.sh.template`,
   `run_queue.sh.template`), parameterized from the profile. Its mutable output must resolve inside
   `active/<run-id>`; cache resolves to the profile's `cache/`. A legacy `DURABLE_DIR/final_ckpts` copy is
@@ -61,8 +62,9 @@ sections, and skip any phase already done.
 - [ ] Bound checkpoint retention per `references/run-remote/artifact-layout.md` (`active/<run-id>`).
 - [ ] Build the per-cell queue/config files with one isolated write path per cell (no shared mutable output — parallel ablation needs this; `references/run-remote/parallel_ablation.md`).
 - [ ] **Rehearse the exact launch command on CPU LOCALLY, BEFORE renting** — tiny data and shapes, but through every lifecycle point: stage switch, one candidate save through the real loading probe (no stubs), validation, final test, export. Assert, not eyeball: losses stay finite and ≥ their floor for a few hundred steps, and the parameter count equals the reference architecture. A rehearsal that ends inside warmup proves no learning: mark that check deferred and enforce it on the first real epoch (principle #2). Smoke *content* → **references/verifying/methodology.md** (REQUIRED).
+- [ ] **Audit normalization and scale on one real batch, BEFORE renting** — `scripts/preflight_audit.py` must exit 0 (`audit_model` + `audit_inputs` inside the training script, or `inputs --npy` on a saved batch): every normalization layer's input variance ≥ 10× its `eps`, inputs finite and of order 0.1–1 per sample, no min–max or RMS set by an offset or a single coefficient. Fix the scale upstream (e.g. divide each sample by its RMS), not `eps`; the traps → **references/verifying/methodology.md** §6.
 
-> **verify:** the rehearsal reaches export with rc 0, every lifecycle assertion passes, and each deferred check is written into the launch's monitor.
+> **verify:** the rehearsal reaches export with rc 0, every lifecycle assertion passes, `preflight_audit.py` exits 0 on a real batch, and each deferred check is written into the launch's monitor.
 
 ## Phase 3 — Detached launch
 
@@ -70,16 +72,19 @@ sections, and skip any phase already done.
 - [ ] Push code/data with a resumable transfer (`rsync --partial` or `timeout`+resume loop — principle #7),
   verify them against the bound source/data identities, then launch. Never edit a script under a live
   run—version filenames (principle #6).
+- [ ] **The node runs itself before anything local can wait on a human.** Start the on-node chain first — probe → gate → dead-man (`scripts/run_one.sh.template`) → run → power-off — and only then take local steps that can stop on a question or a permission prompt: a prompt left unanswered overnight idles a paid GPU for hours. Keep commands whose target a guard cannot resolve (`rm "$VAR"`, globs) inside the node script, not in the local session.
+- [ ] **Throughput budget in the first minutes.** Time ~50 real steps on the real loader, GPU-synchronized (`preflight_audit.py speed`, or `time_steps` + `audit_speed` in the script): a data wait above 20 % of step time is fixed before the long run (`references/training/throughput-profiling.md` T1, T4–T8); projected hours × price above the run's budget is re-planned before it is spent.
+- [ ] **One pilot before the queue.** Release the remaining independent runs only after one formal run passes a predeclared training-and-evaluation check (for example, epoch-3 validation beats epoch 1); on failure stop the queue and diagnose before launching the rest.
 - [ ] Probe briefly: log head + process alive + no traceback, then **hand control back**. Never a blocking foreground `sleep` (the foreground turn limit is host-specific — `references/run-remote/monitoring_patterns.md` §7).
 
-> **verify:** within 60 s, the detach session is alive and the first log line shows the expected step/epoch.
+> **verify:** within 60 s, the detach session is alive and the first log line shows the expected step/epoch; within the first minutes the speed audit prints `PREFLIGHT PASS` with its projected hours and cost in the run log.
 
 ## Phase 4 — Durable monitoring
 
 - [ ] For anything over ~1–2 h, deploy the **four-layer architecture** (`references/run-remote/monitoring_patterns.md`): on-box self-completion chain + session patrol loop + event sentinels + recovery handbook. A session-bound watcher alone dies with the session (principle #3).
 - [ ] Use a bounded background waiter that exits and notifies (Claude Code: `run_in_background`; other hosts map per `references/run-remote/monitoring_patterns.md` §7) for long waits; never foreground-poll. NEVER an unquoted `|` inside a poll-regex (see `references/run-remote/monitoring_patterns.md` §0, fact 4).
-- [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure). Also alert on a negative or non-finite loss, a heartbeat older than 30 min, and a validation metric outside the reference run's same-epoch band: a crash-only watcher let a 6–10 dB regression run ~3 h (2026-10-11).
-- [ ] State and ledger entries take their timestamp from the writing command's own clock (`date -u`, or `time.gmtime()` in the same call), never typed: typed stamps ran ahead of the clock four times on 2026-10-11..13 with the rule already loaded.
+- [ ] Watch `df -i` trend (not just `df -h`), cgroup memory %, new FINISHED/ERROR/Traceback markers, and fast-finish (< ~50% expected duration → probable failure). Also alert on a negative or non-finite loss, a heartbeat older than 30 min, and a validation metric outside the reference run's same-epoch band: a crash-only watcher can let a multi-dB regression run for hours.
+- [ ] State and ledger entries take their timestamp from the writing command's own clock (`date -u`, or `time.gmtime()` in the same call), never typed: typed stamps have run ahead of the clock repeatedly with this rule already loaded.
 - [ ] Reconcile each watcher against the job's REAL process/artifact (`tmux ls`/`squeue`/`pgrep` + output `mtime`) — a watcher's own state is a claim, not ground truth (principle #3). Tear a watcher down when its job is superseded.
 - [ ] Classify each failure → its fixed remediation (see Failure handling below); **never blind-retry**.
 

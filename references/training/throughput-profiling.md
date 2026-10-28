@@ -39,7 +39,10 @@ https://apxml.com/courses/planning-optimizing-ai-infrastructure/chapter-5-strate
 - **Comms-bound** (multi-GPU/-node only): per-GPU util high, scaling efficiency poor; time in
   `nccl:all_reduce`/`all_gather` not overlapped with compute. Go to T23.
 
-The highest-signal instrument is a **profiler trace** (T19) — read it before changing anything.
+The cheapest decisive reading is the **data-wait share**: time loader wait and step separately over ~50
+GPU-synchronized steps (`scripts/preflight_audit.py speed`). Above 20 % of step time the run is data-bound
+(T4–T8); above 50 % the GPU idles most of the time. To find the cause inside a slow step, read a **profiler
+trace** (T19) before changing anything.
 
 ### T2 — `nvidia-smi` GPU-Util % lies; correlate clock + power → `references/run-remote/gotchas_universal.md` U21
 

@@ -32,8 +32,8 @@ hands-on; see the README's Verification status).
 | result-validity-report-gate | **PASS** | 1 | VERIFY → `references/verifying/methodology.md` | §1, §4, §5, §6, §7, §9, §11–§14; SKILL.md custody section |
 
 **Summary: 15/15 scenarios routed correctly**, each to a correct, specific answer within ≤2 hops (12 in one
-hop). The Tier-1 structural check (`run_evals.py`) runs the full
-49-case `cases.jsonl` and is the authoritative regression line; the 34 cases without a row here are
+hop). The Tier-1 structural check (`run_evals.py`) runs every case
+in `cases.jsonl` and is the authoritative regression line; cases without a row here are
 structural-only guards unless their `agentic` field records a run.
 
 ## Known gaps

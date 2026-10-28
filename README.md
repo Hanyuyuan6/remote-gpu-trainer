@@ -172,7 +172,7 @@ remote-gpu-trainer/
 │   ├── verifying/    is the number real?
 │   └── delivering/   figures and tables from one evidence layer
 ├── scripts/          launch, health, transfer and verify tools
-└── evals/            49 scenarios checked in CI
+└── evals/            structural scenarios checked in CI
 ```
 
 Every profile has the same eight sections, from launch and storage survival to teardown and billing, so a platform you have never used reads like one you know. Every money-affecting fact carries a `verified YYYY-MM` stamp.
@@ -193,7 +193,7 @@ The skill is self-contained. Where a separate skill deepens a step, it names one
 
 Only the AutoDL profile comes from the author's hands-on use. The other rental profiles are built from official documentation and community reports, plus gotchas that contributors hit on live runs. The skill re-checks the provider's current docs before any irreversible step, and `scripts/check_staleness.py` lists every `verified` stamp older than six months.
 
-CI runs 49 structural scenarios on every push and pull request to `main`; each checks that the answer to a realistic problem is still where the skill says it is. On 2026-09-15 the maintainer also gave 15 of them to fresh Claude Opus 5 subagents, starting from `SKILL.md`: all 15 reached a correct, specific answer within two hops. These are author-run smoke tests, not a benchmark; the runs are in [`evals/RESULTS.md`](evals/RESULTS.md).
+CI runs every structural scenario in [`evals/cases.jsonl`](evals/cases.jsonl) on every push and pull request to `main`; each checks that the answer to a realistic problem is still where the skill says it is. On 2026-09-15 the maintainer also gave 15 of them to fresh Claude Opus 5 subagents, starting from `SKILL.md`: all 15 reached a correct, specific answer within two hops. These are author-run smoke tests, not a benchmark; the runs are in [`evals/RESULTS.md`](evals/RESULTS.md).
 
 ## When not to use it
 

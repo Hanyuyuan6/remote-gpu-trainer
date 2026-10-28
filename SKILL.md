@@ -13,10 +13,9 @@ metadata:
 Move one experiment through **RUN → VERIFY → DELIVER** with the least control work that safely advances the
 user's outcome. This is the compute/control layer and owns one compute attempt. When the task spans several
 runs, nodes, independent side-effect lanes, or paper-wide closeout, route scheduling and state projection to
-`research-artifact-hygiene` (closeout ledger; formerly the separate `supervise-research-closeout` skill); do
-not duplicate a second controller here. Companion skills named anywhere in this skill
-(`research-artifact-hygiene`, `mirror-research-artifacts`, `superpowers:*`, `huggingface-skills:*`) are
-optional separate installs: without one, do the equivalent step with your own tools.
+`research-artifact-hygiene` (closeout ledger); do not duplicate a second controller here. Companion skills named
+anywhere in this skill (`research-artifact-hygiene`, `mirror-research-artifacts`, `superpowers:*`,
+`huggingface-skills:*`) are optional separate installs: without one, do the equivalent step with your own tools.
 
 ## Start with the outcome, not a package
 
@@ -56,10 +55,9 @@ blocks and the substantive evidence is already in hand by another route, say so 
 that route — do not idle a paid node waiting for a human to adjudicate paperwork. Data, secret and spend guards stay closed.
 
 For a routine probe, launch, pull, or shutdown, use the maintained primitive. After one failed package and one
-successor, stop version churn: repair the primitive, use a minimal operator-visible command, or report one
-blocker. A protocol-preserving scientific source successor is not a renamed control package: keep frozen bytes
-immutable, bind one minimal successor to a fresh run identity, and test the changed behavior through the real
-consumer.
+successor, stop version churn: repair the primitive, use a minimal operator-visible command, or report one blocker. A
+protocol-preserving scientific source successor is not a renamed control package: keep frozen bytes immutable, bind
+one minimal successor to a fresh run identity, and test the changed behavior through the real consumer.
 
 Action economics, authority retirement, capacity semantics, and exact-chain regression live in
 `references/run-remote/control-economy.md`; load it only for remote mutation, custody, storage recovery, or teardown.
@@ -81,18 +79,23 @@ Action economics, authority retirement, capacity semantics, and exact-chain regr
 2. Read `references/run-remote/principles.md`, then the current phase in `references/run-remote/lifecycle_checklist.md`.
 3. Bind source/config/data identities and batch all source changes into one launch. Rehearse the exact command on
    CPU through every lifecycle point (stage switch, a save via the real probe, validation, test, export); assert
-   finite losses (non-negative only where the objective is) and the reference parameter count.
+   finite losses (non-negative only where the objective is) and the reference parameter count. On one real batch,
+   `scripts/preflight_audit.py` must pass: each normalization layer's input spread ≥ 10× its eps, raw inputs finite
+   and of order 0.1–1, no scale set by an offset or one coefficient (`references/verifying/methodology.md` §6).
 4. Execute producer → serializer → actual parser/runner → target shell/OS. Mocks may suppress external side
    effects, never real parsing, paths, quoting, ancestry, time, or exit propagation.
-5. Launch detached into a fresh `active/<run-id>` and checkpoint to durable storage with idempotent resume.
+5. Launch detached into a fresh `active/<run-id>` and checkpoint to durable storage with idempotent resume. The node
+   runs itself (probe → gate → dead-man → run → power-off) before any local step that can wait on a human: an
+   unanswered prompt idles a paid GPU overnight. Then time ~50 steps (`preflight_audit.py speed`) and fix a data wait
+   above 20 % (`references/training/throughput-profiling.md` T1–T8) or hours × price over budget before the long run.
 6. Close only validated work into `export/<run-id>`; quarantine failures. Never mirror mutable `active/`.
 7. Prove every fail-closed input EXISTS before renting, not after booting. Enumerate what the runner refuses
    to start without (per-checkpoint resolved config, dataset bundle provenance, prepared manifest) and locate
    each on the mirror, locally, and on the node. A smoke test proves the box runs, not that the run has inputs.
 8. Independent runs get their own box, in parallel — a serial queue on one machine is a choice. One writer per
    GPU still holds: parallel means more machines, never two writers on one. Say which runs are independent first.
-9. Route big transfers by measured speed (owner 2026-10-13): time a small probe on the node↔HF leg and on this
-   machine's leg, take the faster; a hop here is staging only — upload, read back, delete, note it in the receipt.
+9. Route big transfers by measured speed: time a small probe on the node↔HF leg and on this machine's leg, take the
+   faster; a hop here is staging only — upload, read back, delete, note it in the receipt.
 
 Storage pressure is an active recovery problem, not a permanent blocker. Treat percentage as warning and
 `required bytes + margin` on the resolved device as the action threshold. Stop new writers, protect
@@ -132,9 +135,8 @@ consumer evidence. Current explicit authority still determines the provider acti
 - A request to make data safe enough that later release would be harmless is a custody quality bar, not
   release permission. If the user says "shut down, do not release," finish custody, run one idle/no-writer
   preflight, shut down once, verify offline, and preserve disks.
-- A stale delegated `never release` is a provisional guard, not policy. Once its risk closes and a newer
-  direct user decision authorizes the exact instance consequence, retire it instead of repairing an obsolete
-  package.
+- A stale delegated `never release` is a provisional guard, not policy. Once its risk closes and a newer direct user
+  decision authorizes the exact instance consequence, retire it instead of repairing an obsolete package.
 
 Keep evidence deletion, cache cleanup, overwrite, shutdown, and provider release as separate decisions.
 
@@ -163,18 +165,16 @@ and `scripts/reconcile.py` for synthesis rules and cross-document drift. Keep so
 separate. This skill never invents ground truth or GT-derived metrics; no-GT hardware retains finite-forward rows
 and applicable prediction/overlay visuals with metrics declared not applicable.
 
-Lead the user-facing result with usable artifacts and verified status, then residuals and a compact evidence
-index. Receipts, failed attempts, and internal control versions stay under the trust area, not in the product
-structure.
+Lead the user-facing result with usable artifacts and verified status, then residuals and a compact evidence index.
+Receipts, failed attempts, and internal control versions stay under the trust area, not in the product structure.
 
 ## Resource router
 
-- local execution: `references/run-local/`
+- local execution: `references/run-local/`; per-platform facts: `profiles/`
 - remote lifecycle, transport, storage, monitoring, layout: `references/run-remote/`
 - OOM, hangs, NaN, throughput, convergence, data pipeline, checkpoint resume: `references/training/`
-- scientific result verification: `references/verifying/`
-- per-platform facts: `profiles/`
-- runnable templates and checkers (wrappers, monitors, transfer, acceptance, reconciliation): `scripts/`
+- scientific result verification: `references/verifying/`; runnable templates and checkers (wrappers, monitors,
+  transfer, acceptance, reconciliation, preflight): `scripts/`
 
 Load only the resource named by the current route. A generalizable, reproduced root cause may be proposed via
 `references/self-improvement.md`; project facts belong in project memory/SSoT, not this global entrypoint.

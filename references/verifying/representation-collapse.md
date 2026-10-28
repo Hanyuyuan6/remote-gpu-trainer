@@ -25,7 +25,7 @@ Worked numbers: an encoded measurement vector with `|x| ≈ 0.5` and per-element
 
 ## Step 2 — Diff a working sibling's input layer
 
-If a sibling project ingests the same modality and works, **read its input layer before inventing a fix.** (Real: the working sibling reshaped the measurement and `LayerNorm`'d it at the input; the broken net fed the raw vector straight into `Linear`.) Adopt the sibling's input norm rather than theorizing a new one — and note a *per-sample* norm is also rate/distribution-robust, killing two birds with one principled change.
+If a sibling project — or this project's last working version — ingests the same modality and works, **read its input layer and normalization chain before inventing a fix.** (Real: the working sibling reshaped the measurement and `LayerNorm`'d it at the input; the broken net fed the raw vector straight into `Linear`.) Adopt the sibling's input norm rather than theorizing a new one — and note a *per-sample* norm is also rate/distribution-robust, killing two birds with one principled change.
 
 ## Step 3 — RENDER the intermediate; don't trust the proxy
 

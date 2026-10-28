@@ -312,18 +312,18 @@ replaces it with a wheel lacking the arch's kernels → `no kernel image is avai
 /root/req_remote.txt` — keep the image build; smoke `torch.cuda.get_device_capability()` + a heavy import
 before launch; disclose the off-band torch version with results.
 
-### 7.x Console boot / clone / import (measured 2026-08-31 … 2026-09-09 on real nodes; sunk from a project memory 2026-09-15)
+### 7.x Console boot / clone / import (measured on real nodes, 2026-08/09)
 
 - **"Boot failed" is usually not your mistake.** The dialog 「该主机空闲GPU不足 / 主机GPU空闲数量 0 卡」 means the *host* is fully booked by other tenants. Two exits: **克隆实例** (the platform places the clone on a host with free GPUs; same region only; the source instance is untouched), or the 「无卡模式开机」 link inside that same dialog when you only need the disk (rendering, packaging, exports).
 - **The clone dialog ticks the system disk only.** The project lives on the data disk, so tick 数据盘 by hand before confirming (the resulting URL carries `copy_data_disk=1`); a clone without it boots into an empty workspace.
 - **Run scripts with `PYTHONPATH=<project root>`.** An editable install's `.pth` may point at a stale copy of the repo; `python -c "import src"` from the project root passes (cwd is `sys.path[0]`), while `python scripts/x.py` puts `scripts/` first and `import src.*` resolves to the stale copy → ImportError. Test under the exact condition the job runs under, not a friendlier one.
 
-### 7.y Console API, Jupyter channel, transfers (sunk from a project ops memory 2026-09-24)
+### 7.y Console API, Jupyter channel, transfers (as of 2026-09)
 
 - **Drive the console through its API, not screenshots.** In the logged-in console tab, the page's own
   token (localStorage `token`, sent as the `Authorization` header; never print or store it) authorizes
-  `POST /api/v1/instance` (list: status, `ssh_port`) and `POST /api/v1/instance/power_on` /
-  `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. Identify a box by its full `instance_uuid` and name tag, never by a uuid prefix or by whether SSH connects. A no-GPU
+  `POST /api/v1/instance` (list: status, `ssh_port`, free GPUs `gpu_idle_num` / `gpu_all_num`) and `POST /api/v1/instance/power_on` /
+  `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. Answer "is a GPU free?" from `gpu_idle_num`, never by sending `power_on`: a request answered 「服务正忙」 (busy) may still be queued and executed, and every boot bills and restarts the 15-day release clock. Identify a box by its full `instance_uuid` and name tag, never by a uuid prefix or by whether SSH connects. A no-GPU
   boot did not start through the API in four request shapes; use the row's 「无卡模式开机」 instead.
 - **Locate an SSH handshake timeout by switching networks.** When the console shows the target instance as
   「运行中」 (running) and the SSH address was read live from its row, but a direct connection stalls in the
@@ -340,11 +340,11 @@ before launch; disclose the off-band torch version with results.
   (measured 2026-10: this recovered the address). Never paste a password into a visible box, and never use
   this to get around a tool's safety refusal.
 - **Never click a menu item by remembered coordinates.** The last entry of 「更多」 is 「释放实例」, which
-  destroys the instance and its data disk (a near miss on 2026-09-06: the red confirmation does not
+  destroys the instance and its data disk (the red confirmation does not
   close on Escape). Find entries by their text on a fresh read of the page.
 - **Install a non-SSH control channel at deploy time and self-test it before relying on it.** From some operator
   networks SSH stalls in the banner exchange and JupyterLab (8443) hangs, while HTTPS to Hugging Face works from
-  both ends (2026-10-11/13). A Bucket mailbox kept two nodes controllable without a hotspot: the node polls for a
+  both ends (observed 2026-10). A Bucket mailbox kept two nodes controllable without a hotspot: the node polls for a
   request naming a SHA-256-checked bundle with word-only arguments, holds on failure (token and mailbox stay), and
   writes its log under a prefix the operator can fetch; delete it with the token at closure.
 - **When SSH is down, use the Jupyter channel from a light `/jupyter/tree` page** (the Lab page stalls
