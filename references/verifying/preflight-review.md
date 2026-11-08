@@ -21,5 +21,5 @@ project's own checks. Report what was not covered; passing is not proof of scien
    condition (for example noise-free) is missing, the real data is replaced or shrunk, an uncounted
    operator is reported as zero compute, or a heavy stage silently runs on the CPU.
 
-If the project-audit skill is installed, record the five checks as its run-through page (its
-`references/mapping-and-walkthrough.md` W3) on the rented node, so the device and throughput on the page are real.
+If the project-audit skill is installed, record the five checks on the rented node as the run-through page that
+project-audit `references/mapping-and-walkthrough.md` W3 describes, so the device and throughput on the page are real.
