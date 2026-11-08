@@ -72,8 +72,8 @@ Action economics, authority retirement, capacity semantics, and exact-chain regr
 
 ### Rented or shared machine
 
-0. Heavy compute (training, `torchrun`, inference) runs on the node, never on the operator's machine; if a
-   local guard blocks it, go remote. Big files may transit this machine (step 9) but never stay on it.
+0. Heavy compute (training, `torchrun`, inference) runs on the node, never on the operator's machine; if a local guard blocks it, go remote.
+   Big files may transit this machine (step 9) but never stay on it. Before a paper experiment's real run, do the 30-minute pre-flight in `references/verifying/preflight-review.md`.
 1. Read exactly one `profiles/<platform>.md`; it owns paths, proxy, billing, stop and destruction semantics,
    and the instance-naming rule (rename every box `<project>-<purpose>-<date>` on creation).
 2. Read `references/run-remote/principles.md`, then the current phase in `references/run-remote/lifecycle_checklist.md`.
@@ -145,7 +145,7 @@ Keep evidence deletion, cache cleanup, overwrite, shutdown, and provider release
 A green run is not a trustworthy result. Before reporting a metric or ablation delta:
 
 - state seed and determinism settings;
-- change exactly one comparison variable;
+- isolate one variable for regression/causal attribution; for method comparisons allow method-specific tuning under the same search budget, and use a small factorial design for suspected interactions;
 - state metric direction (PSNR/SSIM/mAP ↑; LPIPS/NMSE/loss ↓);
 - classify the observation as bug, effect, or noise;
 - probe leakage, fairness, variance, and saved-artifact re-derivation.

@@ -9,7 +9,7 @@ The running example is a `measurement → image` reconstruction/adapter net (an 
 A `measurement→X` net whose output is near-identical across *distinct* inputs is **ignoring its input**, not learning slowly. Two equivalent scalar tells:
 
 - **Output cross-sample cosine ≈ 1.0** on a batch of distinct inputs.
-- **`real == shuffle`** in a conditioning control (decode each sample against ANOTHER sample's tokens). A *bit-identical* `real == shuffle` (e.g. `0.126 == 0.126`) means the swap changed nothing ⇒ tokens are sample-invariant ⇒ collapsed. A genuine reader gives `real ≫ shuffle`; `real ≈ shuffle ≈ chance` says the same with scatter.
+- **`real == shuffle`** in a conditioning control (decode each sample against ANOTHER sample's tokens). A *bit-identical* `real == shuffle` (e.g. `0.126 == 0.126`, compared per sample at full precision, not as a rounded summary) means the swap changed nothing ⇒ tokens are sample-invariant ⇒ collapsed. A genuine reader gives `real ≫ shuffle`; `real ≈ shuffle ≈ chance` says the same with scatter.
 
 These are cheaper and more decisive than any loss curve.
 
@@ -50,11 +50,11 @@ Decisive A/B (real): an output-token→image recon head left adapter cross-sampl
 
 ## Step 5 — Train-ok / val-collapsed ⇒ per-split input-distribution mismatch
 
-A net that de-collapses on the train split but stays collapsed on val/test usually gets a **different input distribution per split** — e.g. the val/test pipeline forces a fixed sampling rate (often the **geometric mean** of the train range) while train varies it. Dump per-split input stats (`sampling_rate`, per-feature std, cross-sample cosine), not just the model's outputs. A per-sample input norm survives this; a norm that bakes in *train* dataset statistics does not (its std is inflated by train-only variation, suppressing the signal at the val operating point).
+A net that de-collapses on the train split but stays collapsed on val/test usually gets a **different input distribution per split** — e.g. the val/test pipeline forces a fixed sampling rate (often the **geometric mean** of the train range) while train varies it. Dump per-split input stats (`sampling_rate`, per-feature std, cross-sample cosine), not just the model's outputs, and confirm both splits run in the same train/eval mode. A per-sample input norm survives this; a norm that bakes in *train* dataset statistics does not (its std is inflated by train-only variation, suppressing the signal at the val operating point).
 
 ## Step 6 — Architecture-invariant failure ⇒ stop redesigning, diff the input
 
-When the SAME failure signature (collapse, `real==shuffle`, chance-floor metric) survives **every architecture change** — frozen vs LoRA, encoder A vs B, with vs without an aux head, reconstruction vs distillation — the cause is **upstream of the architecture**: input pipeline, normalization, or target construction. Each pivot then invents a fresh just-so story for the *same* number and burns a retrain.
+When the SAME failure signature (collapse, `real==shuffle`, chance-floor metric) survives **every architecture change** — frozen vs LoRA, encoder A vs B, with vs without an aux head, reconstruction vs distillation — the cause is **upstream of the architecture**: input pipeline, normalization, target construction, or a shared loss/optimizer setting. Each pivot then invents a fresh just-so story for the *same* number and burns a retrain.
 
 The tell is the **invariance itself** — a real architectural cause would shift the signature. (Real: a long series of adapter redesigns each "explained" a collapse that was really one missing per-feature input standardization; once standardized, the *first, simplest* architecture de-collapsed — `adapter_cosine 0.997 → 0.80`.)
 
@@ -66,7 +66,7 @@ The tell is the **invariance itself** — a real architectural cause would shift
 
 ## Kill-it-early rule
 
-The de-collapse signal (output cross-sample cosine; or a tracker's unique-prediction-count / predicted-class histogram) settles within **~1 epoch**. Cosine pinned near 1.0 + predictions piling onto a single class ⇒ it will not recover. A multi-hour run to a foregone `real==shuffle` is wasted GPU — watch that signal live and early-stop in epoch 1.
+Watch the de-collapse signal live (output cross-sample cosine; or a tracker's unique-prediction-count / predicted-class histogram). Cosine pinned near 1.0 with predictions piling onto one class is the collapse signature, but a plateau is not yet a verdict: a near-zero-spread plateau can escape in epoch 2–3 (measured: feature spread sat near 0.001 for two epochs, then jumped to 0.27–0.37 at steps 700–900 of epoch 2). Before killing, compare against the last known-good run's curve at the same step; with no reference, fix the observation window before judging (set it now if none was; from similar runs or the expected escape time), never from a uniform epoch count. A one-epoch bisection over many variants cannot tell "slow" from "cannot learn": rerun the last working version first, which localises a regression in minutes.
 
 ## Quick command sketch (adapt to your model)
 

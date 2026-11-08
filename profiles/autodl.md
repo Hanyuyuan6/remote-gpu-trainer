@@ -325,6 +325,17 @@ before launch; disclose the off-band torch version with results.
   `POST /api/v1/instance` (list: status, `ssh_port`, free GPUs `gpu_idle_num` / `gpu_all_num`) and `POST /api/v1/instance/power_on` /
   `power_off` with `instance_uuid`. Take the SSH port from the list, not from the instance id. Answer "is a GPU free?" from `gpu_idle_num`, never by sending `power_on`: a request answered 「服务正忙」 (busy) may still be queued and executed, and every boot bills and restarts the 15-day release clock. Identify a box by its full `instance_uuid` and name tag, never by a uuid prefix or by whether SSH connects. A no-GPU
   boot did not start through the API in four request shapes; use the row's 「无卡模式开机」 instead.
+- **Test the network path before renting.** Some institutional networks complete the TCP handshake on high
+  ports and then pass no data, so SSH stalls in the `banner exchange` while web ports work (measured 2026-11).
+  Before paying for an instance, make one time-bounded SSH attempt from the network you will work on to a
+  gateway port you already know (`ssh -o ConnectTimeout=10 -p <port> <host> true`); one connection at a time,
+  since bursts get the address refused. If it stalls, set up a relay first, then rent:
+  - **Relay through a GitHub Codespace** (no hotspot; the key stays on the local machine): `gh codespace create -R
+    <owner>/<repo> -m basicLinux32gb --idle-timeout 30m`, then `ssh -o "ProxyCommand=gh codespace ssh -c <name>
+    -- -W %h:%p" -p <port> root@<host>` (scp: same option, `-P <port>`). Delete it after use with `gh codespace
+    delete -c <name> --force`; it needs `gh` with the `codespace` scope and counts against the account's monthly
+    Codespaces quota.
+  - Fallback: a phone hotspot, as in the next item.
 - **Locate an SSH handshake timeout by switching networks.** When the console shows the target instance as
   「运行中」 (running) and the SSH address was read live from its row, but a direct connection stalls in the
   `banner exchange`, ask the user to switch to a phone hotspot and make one time-bounded SSH retry to the same

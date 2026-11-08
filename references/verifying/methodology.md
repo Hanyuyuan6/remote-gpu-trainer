@@ -14,7 +14,7 @@
 ## Universal principles (the 6 invariants that generate every probe below)
 
 1. **A surprising number is a hypothesis** — classify it bug / effect / noise before reporting (§1).
-2. **Comparability**: a comparison may change **exactly one** variable; hold data, budget, protocol, metric, split, and seed-handling identical (§1 Probe 1, §5 fair comparison).
+2. **Comparability**: isolate one variable for regression/causal attribution; method comparisons may tune relevant hyperparameters per method under the same search budget. Match data, metric, split, selection and seed-handling; disclose adaptations (§1 Probe 1, §5).
 3. **Leakage = any test information reaching training *or selection*** — via data, preprocessing order, model selection, or pretraining. Probe the *prepared artifacts* + the pipeline order, not the prep code (§4).
 4. **Trust the artifact you loaded, not the claim** — logs, "done" lines, losses, smokes, and single metrics all lie; verify the actual numbers / pixels / bytes (§6, §10, §11).
 5. **A proxy is not the target** — train loss, ε-loss, chance-floor metrics, operating points, hand-picked metric variants are proxies; score the quantity you actually claim, on the disjoint **test** split, **with variance** (§7, §9).
@@ -41,6 +41,8 @@ Two operating invariants throughout: **never mutate the original artifacts while
 
 ## 1. Classify a surprising result (the core loop) — principle 1+2
 
+The one-variable branches below isolate a regression or causal effect; method comparisons follow §5's matched search budget. Use a small factorial design when an interaction is a leading explanation.
+
 ```dot
 digraph classify {
     rankdir=TB; node [shape=box];
@@ -61,7 +63,7 @@ digraph classify {
 }
 ```
 
-**Probe 1 — diff against the control (cheapest, first).** Pull both runs' *resolved* configs; confirm they differ in **exactly the one variable you ablated**. Any extra unexplained delta means the gap is a misconfiguration artifact, not the variable's effect. (The mirror also holds: when a config that *works* differs from a failing one in **≥2 ways at once**, the win is confounded — run one-axis-at-a-time intermediates to find which axis is load-bearing before concluding "X is necessary".)
+**Probe 1 — diff against the control (cheapest, first).** Pull both runs' *resolved* configs; for regression isolation or a one-factor ablation, confirm they differ in **exactly the one variable you ablated**. Any extra unexplained delta means the gap is a misconfiguration artifact, not the variable's effect. (The mirror also holds: when a config that *works* differs from a failing one in **≥2 ways at once**, the win is confounded — run one-axis-at-a-time intermediates to find which axis is load-bearing before concluding "X is necessary".)
 
 **Probe 2 — read the trajectory, not the endpoint.**
 
@@ -76,14 +78,14 @@ digraph classify {
 
 ## 2. Instability vs genuine effect
 
-Stochastic divergence hits a *fraction* of otherwise-identical runs: the same config succeeds most of the time and occasionally fails with a gradient spike / collapse / far-below-control metric. **Do not rescue one condition with special hyperparameters** (clip, patience, lr) — it destroys comparability and invites "why was this cell different?". Retry the identical config (usually succeeds); if it *persistently* fails, report it as a limitation. Usual contributors: nondeterministic conv kernels, reduced-precision autocast, an aggressive default lr.
+Stochastic divergence hits a *fraction* of otherwise-identical runs: the same config succeeds most of the time and occasionally fails with a gradient spike / collapse / far-below-control metric. **For regression isolation or a frozen one-factor ablation, do not rescue one condition with unplanned hyperparameters** (clip, patience, lr). Method comparisons may tune each method under the same search budget, with adaptations and selection recorded (§5). Retry the identical config (usually succeeds); if it *persistently* fails, report it as a limitation. Usual contributors: nondeterministic conv kernels, reduced-precision autocast, an aggressive default lr.
 
 ## 3. Don't corrupt what you're investigating
 
 Three silent comparability-killers:
 1. **Re-running into the original path** — overwrites the result you were comparing against. Back up first.
 2. **Editing a script/config a long job is still reading** — runtimes may re-read mid-execution and misbehave. Change inputs only *between* runs.
-3. **Giving one condition special settings** — breaks the apples-to-apples comparison. Hold every condition identical.
+3. **Unplanned settings in an isolated regression/ablation** — confound attribution. Hold non-target factors fixed there; method comparisons allow recorded per-method tuning under the same search budget (§5).
 
 ## 4. Leakage — test information reaching training *or selection* (principle 3)
 
@@ -156,8 +158,12 @@ Output near-identical across *distinct* inputs (cross-sample cosine ≈ 1.0, or 
 conditioning control) means the net is **ignoring its input**, not learning slowly. Diagnose at the **input**
 (input cross-sample cosine ≈ 1.0 ⇒ an invariant offset swamps the discriminative residual) and *render* the
 intermediate; fix at the input with per-feature standardization or per-sample LayerNorm, never with an output
-de-collapse head; a signature that survives every architecture change is an input/data bug; train-ok /
-val-collapsed is a per-split input mismatch; kill a collapsing run in epoch 1. Full worked diagnosis →
+de-collapse head; low input cosine with collapsed output puts the fault inside the model (gradient flow,
+parameter updates, output path); a signature that survives every architecture change is an input/data bug (or a
+shared loss/optimizer one); train-ok / val-collapsed is a per-split input mismatch; kill a collapsing run only once it
+stays flat past the last known-good run's curve at the same step (no reference: past an observation window fixed
+before judging (set it now if none was), not a uniform epoch count), or sooner once gradients or updates are
+confirmed dead. Full worked diagnosis →
 `references/verifying/representation-collapse.md`.
 
 **Blank-input control (the prior's floor).** For a model that reconstructs from measurements, run it on a
@@ -261,7 +267,7 @@ This skill mainly catches **bugs + negligence**, but **test-set tuning (§4), un
 
 ## Red flags — STOP
 
-- A verdict on a surprising number before control-diff, trajectory, and reproduce (§1); a re-run into the original artifact path; a special safeguard for one condition.
+- A verdict on a surprising number before control-diff, trajectory, and reproduce (§1); a re-run into the original artifact path; an unplanned safeguard for one condition in an isolated regression/ablation.
 - Splits declared clean from reading prep code instead of probing prepared artifacts; any selection on the test split (§4).
 - A baseline weaker than its paper, or run at a budget/setting you do not impose on yourself; numbers copied across settings; only the winning subset reported (§5).
 - "Smoke passed (finite)" taken as correctness — without input-scale parity, gradient flow, and `model.eval()` (§6).
