@@ -259,5 +259,6 @@ When no authenticated fingerprint exists, stop at the host-identity gate; the co
 unverified. Never delete the old key and blindly re-accept an unreviewed replacement.
 
 **T7 — `Connection timed out during banner exchange` although TCP connects.** The operator's network filters the
-SSH exchange (the same box answers at once over a phone hotspot), so retrying changes nothing: switch networks
-for a deploy that needs SSH, and drive running nodes through the profile's non-SSH control channel.
+SSH exchange (the same box answers at once over a phone hotspot), so retrying changes nothing: for a deploy that
+needs SSH, relay it through a GitHub Codespace (`profiles/autodl.md`, "Test the network path before renting") and
+change networks only if the relay is unavailable; drive running nodes through the profile's non-SSH control channel.
