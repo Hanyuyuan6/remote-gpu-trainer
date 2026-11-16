@@ -1,6 +1,6 @@
 ---
 name: "remote-gpu-trainer"
-description: "AutoDL/vast.ai/RunPod/Lambda/Paperspace远程GPU启动、调试、监控、续训、并行、停止及卡住/OOM/NaN/全零指标排查；可验证状态/selection-best checkpoint/拉回结果。释放实例销毁机器及数据盘，不等同关机。长期镜像/恢复→mirror-research-artifacts。"
+description: "AutoDL/vast.ai/RunPod/Lambda/Paperspace远程GPU启动、调试、监控、续训、并行、停止、计算与数据加载优化（榨干GPU）及卡住/OOM/NaN/全零指标排查；可验证状态/selection-best checkpoint/拉回结果。释放实例销毁机器及数据盘，不等同关机。长期镜像/恢复→mirror-research-artifacts。"
 license: MIT
 metadata:
   last-model-review: "2026-09-15 consolidation: one canonical home per rule; private, dated, and duplicated material removed"
@@ -115,15 +115,17 @@ background process is not restart-durable merely because the host still lists it
 - After restart, compaction, or transport loss, re-probe process/session/artifact truth before trusting UI state.
 - Silence or a log string is not current liveness, and liveness is not health: a status line names the metric,
   the reference run's same-epoch value and the data's age; costs, durations and timestamps are computed, not recalled.
+- Never edit a script a running process still executes (watcher, relay, queue wrapper): bash reads it by byte offset,
+  so an edit shifts what runs next (11-14: nearly reached a relay's power-off branch). Copy it, start the copy.
 
 Read `references/run-remote/monitoring_patterns.md` (durability, one watcher, polling, recovery) before creating a monitor.
 
 ## Pull, shutdown, and release are different consequences
 
-Before destructive teardown, require exact roster/bytes/SHA-256 and an actual restore/readback from the
-canonical remote into an independent temporary consumer location. On that consumer, safely load the
-checkpoint and recompute every reported metric from the full prediction population. The consumer may be
-another remote node; a resident Mac `.pth` and local `PULL_VERIFIED.json` are not universal requirements.
+Before destructive teardown or retiring the last independent copy, require exact roster/bytes/SHA-256 and an
+actual restore/readback from the canonical remote into an independent temporary consumer location. On that
+consumer, safely load the checkpoint and recompute every reported metric from the full prediction population. The
+consumer may be another remote node; a resident Mac `.pth` and local `PULL_VERIFIED.json` are not a universal custody requirement.
 Keep a thin logical record with URI, SHA-256, bytes, provider, mutability, verification date, and the bound
 consumer evidence. Current explicit authority still determines the provider action.
 
@@ -137,8 +139,7 @@ consumer evidence. Current explicit authority still determines the provider acti
   preflight, shut down once, verify offline, and preserve disks.
 - A stale delegated `never release` is a provisional guard, not policy. Once its risk closes and a newer direct user
   decision authorizes the exact instance consequence, retire it instead of repairing an obsolete package.
-
-Keep evidence deletion, cache cleanup, overwrite, shutdown, and provider release as separate decisions.
+- Keep evidence deletion, cache cleanup, overwrite, shutdown, and provider release as separate decisions.
 
 ## VERIFY
 
@@ -164,7 +165,6 @@ paper synthesis to the relevant paper/figure skill, with `references/delivering/
 and `scripts/reconcile.py` for synthesis rules and cross-document drift. Keep software and hardware evidence
 separate. This skill never invents ground truth or GT-derived metrics; no-GT hardware retains finite-forward rows
 and applicable prediction/overlay visuals with metrics declared not applicable.
-
 Lead the user-facing result with usable artifacts and verified status, then residuals and a compact evidence index.
 Receipts, failed attempts, and internal control versions stay under the trust area, not in the product structure.
 

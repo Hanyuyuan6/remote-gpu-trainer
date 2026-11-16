@@ -52,9 +52,11 @@ export/<run-id>/
 
 `run.json`, `config.yaml`, `train.csv`, and `best.pth` are required. `last.pth` is the only optional
 top-level checkpoint. Each declared software `<test-id>` must contain `metrics.json`,
-`results.parquet`, and `vis/`. Visualization PNGs are required and must provide complete Cartesian coverage
-of every declared condition × task-native role × the fixed K selected samples, at exactly
-`test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`. There is no top-level `config/`,
+`results.parquet`, and `vis/`. Visualization PNGs are required: every declared condition holds the fixed K
+selected samples under the minimal task-native roles (reconstruction `prediction`; segmentation and detection
+`overlay`), at exactly `test/<test-id>/vis/<condition-id>/<task-native-role>/<sample-id>.png`; `input` and
+`error` are optional and complete when present. Ground truth is stored once per selection roster in the
+project's `_trust/selections/<selection-id>/gt/`, never per condition. There is no top-level `config/`,
 `data/`, `results/`, or `vis/`, and the export contains no dataset bytes.
 
 A software `export/<run-id>` must never contain real-capture or other hardware results. If AutoDL produces
@@ -73,7 +75,7 @@ export/hardware/<hardware-run-id>/
 The hardware `run.json` binds capture identity/hash, decode identity/hash, a same-task closed model-run
 identity/hash, and the referenced `best.pth` hash. It never copies `best.pth`, `last.pth`, or any model
 weights. Every declared hardware test follows one explicit applicability branch. Ground-truth-available tests
-require complete conditions × full task-native roles × K coverage and
+require every condition × the minimal task-native roles × K coverage and
 full-test metrics. A test without machine-readable ground truth explicitly declares
 `ground_truth_status=unavailable_no_machine_readable_gt` and `metric_applicability=not_applicable`; it still
 requires complete finite-forward rows and K prediction visuals (plus overlay for segmentation/detection),

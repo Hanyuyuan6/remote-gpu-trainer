@@ -112,27 +112,22 @@ sections, and skip any phase already done.
   additional layer over the same sealed export.
 - [ ] For that local-delivery branch, pull with `scripts/download_loop.sh` (or the manifest-bound transport selected above); it always lets
   rsync compare/resume and never skips a directory because it is merely large.
-- [ ] Otherwise restore/read back from the canonical remote directly into an independent temporary consumer
-  location, which may be another rented node. Verify every roster entry/byte/SHA-256 there, safely load the
-  checkpoint, and recompute every reported metric from the full prediction population. Persist the compact
-  consumer evidence in the thin logical record. `PULL_VERIFIED.json` is one local transport receipt and is
-  not a universal custody requirement.
+- [ ] Otherwise run `SKILL.md`'s restore-and-recompute check (Pull, shutdown, and release) on an independent
+  temporary consumer, which may be another rented node, and persist its evidence in the thin logical record.
 - [ ] Record disclosable run facts for the paper: CLI overrides, source/data/split identities, tracker
   summary URL, acceptance id, and custody status. A tracker URL is provenance, not the result bundle.
 - [ ] ONLY THEN perform the *profile meter-stop verb*, AFTER explicit user approval of the specific cost-affecting action.
 
 > **verify:** a closed `export/<run-id>` or thin logical run binds the canonical remote URI and provider
-> mutability to exact bytes/SHA-256 plus independent consumer readback, safe load, and full-prediction metric
-> recomputation *before* destructive teardown. A mirror/upload status alone is not a substitute.
+> mutability to an exact roster, bytes and SHA-256 plus independent consumer readback, safe load, and
+> full-prediction metric recomputation *before* destructive teardown. A mirror/upload status alone is not a
+> substitute.
 
-> **Iron Law — teardown gate:** NO `stop` / `release` / `terminate` / `destroy` / file-delete until
-> checkpoints match an explicit remote roster + SHA-256 manifest, have been restored/read back into an
-> **independent temporary consumer and verified by safe load plus full-prediction metric recomputation**,
-> AND the user has explicitly approved the
-> cost-affecting action. "It looked done in the log" is not evidence (principle #3). On most platforms the
-> meter-stopping verb is **irreversible** (deletes the disk) — confirmation matters *more*, not less. The
-> general form may be reinforced by a separate verification-before-completion companion when installed;
-> the bundled manifest gate remains mandatory and self-contained.
+> **Iron Law — teardown gate:** NO `stop` / `release` / `terminate` / `destroy` / file-delete until the
+> verify line above holds AND the user has explicitly approved the cost-affecting action. "It looked done
+> in the log" is not evidence (principle #3). On most platforms the meter-stopping verb is **irreversible**
+> (deletes the disk) — confirmation matters *more*, not less. A separate verification-before-completion
+> companion may reinforce this gate; the bundled manifest gate remains mandatory and self-contained.
 
 ## Cost-saving teardown table
 

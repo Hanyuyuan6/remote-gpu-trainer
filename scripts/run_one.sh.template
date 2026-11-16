@@ -43,11 +43,12 @@ if ! eval "${PROXY_HOOK}" 2>/dev/null; then
 fi
 
 # Dead-man timer: stop a forgotten node once the planned runtime has clearly passed (one is armed per
-# node; later jobs reuse it). Shadow mode: a missing duration only warns. Set DEADMAN_SECONDS, or
+# node; later jobs reuse it). A missing duration only warns (shadow closed 2026-11-16: 3 warnings in real
+# launches since 10-08 and no forgotten-node cost found, so it stays advisory). Set DEADMAN_SECONDS, or
 # DEADMAN_SECONDS=off:<reason> to run without a timer on purpose.
 case "$DEADMAN_SECONDS" in
     off:?*) echo "dead-man timer disabled: ${DEADMAN_SECONDS#off:}" >&2 ;;
-    ''|*[!0-9]*) echo "PREFLIGHT WARNING (shadow): set DEADMAN_SECONDS to planned runtime x 1.5 + pull window, or DEADMAN_SECONDS=off:<reason>" >&2 ;;
+    ''|*[!0-9]*) echo "PREFLIGHT WARNING: set DEADMAN_SECONDS to planned runtime x 1.5 + pull window, or DEADMAN_SECONDS=off:<reason>" >&2 ;;
     *) if [ "$DEADMAN_SECONDS" -lt 600 ]; then
            echo "PREFLIGHT WARNING: DEADMAN_SECONDS=$DEADMAN_SECONDS is under 10 minutes; timer not armed" >&2
        elif [ -f "$DEADMAN_DIR/deadman.pid" ] && kill -0 "$(cat "$DEADMAN_DIR/deadman.pid")" 2>/dev/null; then

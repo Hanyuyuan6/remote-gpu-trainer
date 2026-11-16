@@ -260,5 +260,5 @@ unverified. Never delete the old key and blindly re-accept an unreviewed replace
 
 **T7 — `Connection timed out during banner exchange` although TCP connects.** The operator's network filters the
 SSH exchange (the same box answers at once over a phone hotspot), so retrying changes nothing: for a deploy that
-needs SSH, relay it through a GitHub Codespace (`profiles/autodl.md`, "Test the network path before renting") and
-change networks only if the relay is unavailable; drive running nodes through the profile's non-SSH control channel.
+needs SSH, reach the node over a port-443 tunnel (`profiles/autodl.md`, "Test the network path before renting") and
+change networks only if no tunnel or hop is available; drive running nodes through the profile's non-SSH control channel.

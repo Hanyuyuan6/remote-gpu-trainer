@@ -94,10 +94,8 @@ bind the instance and execute the shortest supported release path with one disap
 Release, shutdown, evidence deletion, cache cleanup, overwrite, and non-overwriting repair are distinct
 consequences.
 
-Before destructive teardown, prove that every reported result re-reads from an independently restored temporary
-consumer copy. Exact roster, bytes/SHA-256, safe loads, and full-prediction semantic re-derivation establish
-custody; they do not mint authority. The consumer may be remote; a local `PULL_VERIFIED.json` is only one
-materialized-local delivery receipt.
+Custody before destructive teardown is `SKILL.md`'s restore-and-recompute check (Pull, shutdown, and release);
+it establishes custody, never authority.
 
 ## Topology and user-visible notice
 

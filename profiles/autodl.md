@@ -329,18 +329,24 @@ before launch; disclose the off-band torch version with results.
   ports and then pass no data, so SSH stalls in the `banner exchange` while web ports work (measured 2026-11).
   Before paying for an instance, make one time-bounded SSH attempt from the network you will work on to a
   gateway port you already know (`ssh -o ConnectTimeout=10 -p <port> <host> true`); one connection at a time,
-  since bursts get the address refused. If it stalls, set up a relay first, then rent:
-  - **Relay through a GitHub Codespace** (no hotspot; the key stays on the local machine): `gh codespace create -R
-    <owner>/<repo> -m basicLinux32gb --idle-timeout 30m`, then `ssh -o "ProxyCommand=gh codespace ssh -c <name>
-    -- -W %h:%p" -p <port> root@<host>` (scp: same option, `-P <port>`). Delete it after use with `gh codespace
-    delete -c <name> --force`; it needs `gh` with the `codespace` scope and counts against the account's monthly
-    Codespaces quota.
-  - Fallback: a phone hotspot, as in the next item.
+  since bursts get the address refused. If it stalls, open a port-443 path first, then rent:
+  - **A Cloudflare quick tunnel on the node** (the working way since 2026-11-15; no account, no secret): the node
+    runs `cloudflared` and connects out; the local machine logs in with `ssh -o "ProxyCommand=cloudflared access
+    ssh --hostname %h" root@<name>.trycloudflare.com`. The name is random at every tunnel start, so the node
+    writes it to a file; to survive a power cycle, restart the tunnel from a boot hook and publish the new name
+    where the local machine can read it (for example a private repository branch written with a node-only deploy
+    key that is deleted after use). A tunnelled node is also a jump host to any other AutoDL node, because the
+    regional SSH gateways answer from inside the network; that covers a fresh instance's first login. Measured
+    from a campus network: about 2 MB/s per stream, capped by the campus downlink. Only these SSH connections use
+    the tunnel; the local machine's other traffic and public IP stay unchanged.
+  - First contact with no tunnelled node: a GitHub Codespace hop (`ssh -o "ProxyCommand=gh codespace ssh -c <name>
+    -- -W %h:%p" -p <port> root@<host>`) while its free monthly quota lasts (used up on 2026-11-15, after which it
+    answers HTTP 402), or a phone hotspot as in the next item.
 - **An SSH handshake timeout: relay first, change networks only as a fallback.** When the console shows the target
   instance as 「运行中」 (running) and the SSH address was read live from its row, but a direct connection stalls in
-  the `banner exchange`, the operator's network is filtering SSH: go through the GitHub Codespace relay above (the
-  working way since 2026-11-06; the user changes nothing). Ask the user to switch to a phone hotspot only when `gh`
-  or the Codespace is unavailable, then make one time-bounded SSH retry to the same address; a success over the
+  the `banner exchange`, the operator's network is filtering SSH: go through the port-443 tunnel above (the user
+  changes nothing). Ask the user to switch to a phone hotspot only when no tunnel or hop is available, then make
+  one time-bounded SSH retry to the same address; a success over the
   hotspot supports only "the original network path is involved", not a specific firewall or platform fault.
   Either way, verify the remote instance's identity and real CUDA execution. On the hotspot fallback, shut idle
   instances down while the user switches and state the hotspot's data use from what this run actually
